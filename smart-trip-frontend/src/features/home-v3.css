@@ -1,0 +1,1292 @@
+@font-face {
+  font-family: "SmartTripSeasonNotes";
+  src: url("../assets/seasons/season-notes.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "SmartTripSeasons";
+  src: url("../assets/seasons/season-display.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* The existing Shell owns navigation and session state. Only Home wears this skin. */
+.v3-shell {
+  --ink: #142e3b;
+  --accent: #c84b17;
+  --paper: #fff;
+  --season-orange: #f39a64;
+  position: relative;
+  min-height: 100vh;
+  font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-synthesis: none;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  background: #fffaf1;
+  color: #203f50;
+  --muted: #526c79;
+}
+.v3-shell *,
+.v3-shell *::before,
+.v3-shell *::after {
+  box-sizing: border-box;
+}
+.v3-shell a {
+  color: inherit;
+  text-decoration: none;
+}
+.v3-shell button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.v3-shell :is(a, button) {
+  -webkit-tap-highlight-color: transparent;
+}
+.v3-shell :is(a, button):focus-visible {
+  outline-offset: 5px;
+  outline: 2px solid #a43c13;
+}
+.v3-shell ::selection {
+  color: #172e34;
+  background: #ffc69c;
+}
+.v3-shell :is(h1, h2, p) {
+  margin: 0;
+}
+.v3-shell h2 {
+  font-family: inherit;
+}
+.v3-shell .icon {
+  width: 21px;
+  height: 21px;
+  flex: none;
+  vertical-align: middle;
+}
+.v3-shell .home-main {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+.v3-shell .skip-link {
+  position: fixed;
+  left: 24px;
+  top: -90px;
+  z-index: 100;
+  padding: 12px 18px;
+  border-radius: 8px;
+  color: #142e3b;
+  background: #fff;
+}
+.v3-shell .skip-link:focus {
+  top: 16px;
+  transform: none;
+}
+.v3-shell .home-header {
+  position: fixed;
+  z-index: 40;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 24px;
+  width: 87.2%;
+  max-width: 1580px;
+  min-height: 76px;
+  margin: 0;
+  padding: 12px 26px;
+  border-radius: 20px;
+  color: #122d3d;
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.72),
+    rgba(245, 252, 255, 0.6) 52%,
+    rgba(255, 255, 255, 0.68)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 1px 0 0 rgba(255, 255, 255, 0.44),
+    inset 0 -1px 0 rgba(224, 244, 255, 0.46),
+    0 7px 24px rgba(18, 45, 61, 0.07);
+  -webkit-backdrop-filter: blur(5px) saturate(1.12) brightness(1.16);
+  backdrop-filter: blur(5px) saturate(1.12) brightness(1.16);
+  isolation: isolate;
+}
+.v3-shell .home-header::before,
+.v3-shell .home-header::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.v3-shell .home-header::before {
+  background: linear-gradient(
+    112deg,
+    rgba(255, 255, 255, 0.46),
+    transparent 24%,
+    transparent 72%,
+    rgba(255, 255, 255, 0.12)
+  );
+}
+.v3-shell .home-header::after {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.24),
+    transparent 46%
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.v3-shell .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 13px;
+  font-size: clamp(24px, 1.8vw, 30px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+}
+.v3-shell .brand > .icon {
+  width: 34px;
+  height: 34px;
+  stroke-width: 2;
+}
+.v3-shell .brand-cn {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+.v3-shell .home-header nav {
+  display: flex;
+  gap: clamp(24px, 3vw, 50px);
+  white-space: nowrap;
+  font-size: 18px;
+}
+.v3-shell .home-header nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.v3-shell .home-header nav a:hover {
+  color: #a43c13;
+  text-decoration: underline;
+  text-underline-offset: 6px;
+}
+.v3-shell .home-header :is(a, button):focus-visible {
+  outline-color: #a43c13;
+}
+.v3-shell .home-header .account {
+  display: flex;
+  align-items: center;
+  justify-self: end;
+  gap: 12px;
+  min-width: 0;
+  font-size: 14px;
+}
+.v3-shell .home-account-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  max-width: 180px;
+}
+.v3-shell .home-account-link :is(img, .avatar-letter) {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.85);
+  color: #193647;
+}
+.v3-shell .account-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.v3-shell .home-header .text-button {
+  border: 0;
+  padding: 10px 0;
+  background: none;
+  white-space: nowrap;
+}
+.v3-shell .home-login {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 10px 20px;
+  border-radius: 12px;
+  background: #c84b17;
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.v3-shell .home-login:hover {
+  background: #a43c13;
+}
+.v3-shell .season-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.v3-shell .season-journey {
+  --season-progress: 0;
+  background: #edf6fb;
+}
+.v3-shell .season-stage {
+  position: relative;
+  isolation: isolate;
+  height: 100svh;
+  min-height: 560px;
+  width: 100%;
+  overflow: clip;
+  color: #fffdf4;
+  background: #edf6fb;
+}
+.v3-shell .season-landscape {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  isolation: isolate;
+  pointer-events: none;
+}
+.v3-shell .season-scene--winter .season-landscape {
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    #000 0%,
+    #000 73%,
+    rgba(0, 0, 0, 0.72) 85%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    180deg,
+    #000 0%,
+    #000 73%,
+    rgba(0, 0, 0, 0.72) 85%,
+    transparent 100%
+  );
+}
+.v3-shell .season-stage :is(a, button):focus-visible {
+  outline-color: #ffe3c7;
+}
+.v3-shell .season-journey[data-season="winter"] .season-bottom-bar {
+  color: #234757;
+}
+.v3-shell .season-journey[data-season="winter"] .season-scroll-cue small {
+  color: #365a6b;
+}
+.v3-shell .season-journey[data-season="winter"] .season-scroll-line {
+  background: linear-gradient(transparent, #365a6b);
+}
+.v3-shell
+  .season-journey[data-season="winter"]
+  .season-bottom-bar
+  :is(a, button):focus-visible {
+  outline-color: #a43c13;
+}
+.v3-shell .season-scene--winter .season-scene-caption {
+  color: #234757;
+}
+.v3-shell .season-scenes {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+.v3-shell .season-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+.v3-shell
+  .season-journey[data-motion="pending"]
+  .season-scene:not(:first-child) {
+  visibility: hidden;
+}
+.v3-shell .season-scene--spring {
+  background: #394740;
+}
+.v3-shell .season-scene--summer {
+  background: #3d5055;
+}
+.v3-shell .season-scene--autumn {
+  background: #35463f;
+}
+.v3-shell .season-scene--winter {
+  background: transparent;
+}
+.v3-shell .season-photo {
+  position: absolute;
+  inset: -4%;
+  z-index: -3;
+  display: block;
+  width: 108%;
+  max-width: none;
+  height: 108%;
+  object-fit: cover;
+  pointer-events: none;
+}
+.v3-shell .season-scene--spring .season-photo {
+  object-position: 54% 52%;
+}
+.v3-shell .season-scene--summer .season-photo {
+  object-position: 60% 52%;
+}
+.v3-shell .season-scene--autumn .season-photo {
+  object-position: 58% 54%;
+}
+.v3-shell .season-scene--winter .season-photo {
+  object-position: 55% 54%;
+}
+.v3-shell .season-scene-shade {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    linear-gradient(0deg, rgba(6, 19, 21, 0.62), transparent 58%),
+    linear-gradient(
+      90deg,
+      rgba(6, 19, 21, 0.23),
+      transparent 42%,
+      transparent 78%,
+      rgba(6, 19, 21, 0.46)
+    );
+}
+.v3-shell .season-scene--summer .season-scene-shade {
+  background:
+    linear-gradient(0deg, rgba(7, 21, 28, 0.6), transparent 70%),
+    linear-gradient(
+      90deg,
+      transparent 25%,
+      rgba(7, 21, 28, 0.12) 62%,
+      rgba(7, 21, 28, 0.48)
+    );
+}
+.v3-shell .season-scene--autumn .season-scene-shade {
+  background:
+    linear-gradient(0deg, rgba(12, 20, 18, 0.65), transparent 75%),
+    linear-gradient(
+      90deg,
+      rgba(12, 20, 18, 0.12),
+      transparent 35%,
+      rgba(12, 20, 18, 0.48)
+    );
+}
+.v3-shell .season-scene--winter .season-scene-shade {
+  background:
+    linear-gradient(
+      0deg,
+      rgba(6, 22, 34, 0.56),
+      rgba(6, 22, 34, 0.15) 64%,
+      transparent
+    ),
+    linear-gradient(90deg, transparent 78%, rgba(6, 22, 34, 0.42));
+}
+.v3-shell .season-copy {
+  position: absolute;
+  left: 9%;
+  bottom: 23%;
+  max-width: 73%;
+}
+.v3-shell .season-copy h2 {
+  font-family: "SmartTripSeasons", "KaiTi", serif;
+  font-size: clamp(64px, 7vw, 118px);
+  font-weight: 400;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  color: #fffdf4;
+  text-shadow: 0 2px 20px rgba(0, 15, 20, 0.2);
+}
+.v3-shell .season-line-mask {
+  display: block;
+  overflow: clip;
+  padding: 0.05em 0.06em;
+  margin: -0.05em -0.06em;
+}
+.v3-shell [data-season-line] {
+  display: block;
+  transform-origin: 0 100%;
+}
+.v3-shell .season-scene--spring .season-line-mask + .season-line-mask {
+  margin-left: 0.5em;
+}
+.v3-shell .season-copy .season-story {
+  margin-top: 25px;
+  color: #fffef8;
+  text-wrap: pretty;
+  max-width: 26em;
+  font-family: "SmartTripSeasonNotes", "KaiTi", serif;
+  font-size: clamp(20px, 1.5vw, 26px);
+  font-weight: 400;
+  line-height: 1.65;
+  letter-spacing: 0.035em;
+  text-shadow: 0 1px 7px rgba(0, 15, 20, 0.25);
+}
+.v3-shell .season-note-script {
+  display: inline-block;
+  transform: rotate(-1.5deg);
+  transform-origin: 0 50%;
+}
+.v3-shell .season-note-script > span {
+  display: block;
+}
+.v3-shell .season-note-script > span + span {
+  margin-left: 0.9em;
+}
+.v3-shell .season-scene-caption > span:last-child {
+  font-family: "SmartTripSeasonNotes", "KaiTi", serif;
+  font-size: clamp(19px, 1.7vw, 28px);
+  line-height: 1.3;
+  letter-spacing: 0.06em;
+  transform: rotate(-3deg);
+  text-align: right;
+}
+.v3-shell .season-scene--summer .season-copy {
+  left: 47%;
+  bottom: 25%;
+  max-width: 44%;
+}
+.v3-shell .season-scene--summer h2 {
+  font-size: clamp(64px, 6.5vw, 110px);
+}
+.v3-shell .season-scene--summer .season-line-mask + .season-line-mask {
+  margin-left: -0.45em;
+}
+.v3-shell .season-scene--autumn .season-copy {
+  left: 42%;
+  bottom: 24%;
+  max-width: 48%;
+}
+.v3-shell .season-scene--autumn h2 {
+  font-size: clamp(62px, 6.5vw, 110px);
+}
+.v3-shell .season-scene--autumn .season-line-mask + .season-line-mask {
+  margin-left: 0.7em;
+}
+.v3-shell .season-scene--winter .season-copy {
+  left: 20%;
+  right: 20%;
+  bottom: 29%;
+  max-width: none;
+  text-align: center;
+}
+.v3-shell .season-scene--winter h2 {
+  font-size: clamp(66px, 7.3vw, 122px);
+}
+.v3-shell .season-scene--winter .season-line-mask + .season-line-mask {
+  margin-top: 0.6em;
+  font-size: 0.43em;
+  letter-spacing: 0.08em;
+}
+.v3-shell .season-scene--winter .season-story {
+  margin: 30px auto 0;
+}
+.v3-shell .season-glyph {
+  position: absolute;
+  top: 20%;
+  right: 16%;
+  font-family: "SmartTripSeasons", "KaiTi", serif;
+  font-size: clamp(130px, 15vw, 250px);
+  font-weight: 400;
+  line-height: 1;
+  color: rgba(255, 253, 245, 0.26);
+  pointer-events: none;
+  user-select: none;
+}
+.v3-shell .season-scene--summer .season-glyph {
+  top: auto;
+  bottom: 29%;
+  right: auto;
+  left: 12%;
+  color: rgba(255, 253, 245, 0.36);
+}
+.v3-shell .season-scene--autumn .season-glyph {
+  top: 25%;
+  left: 12%;
+  right: auto;
+  color: rgba(255, 224, 187, 0.32);
+}
+.v3-shell .season-scene--winter .season-glyph {
+  top: 19%;
+  right: 14%;
+  font-size: clamp(110px, 11vw, 180px);
+  color: rgba(239, 249, 255, 0.24);
+}
+.v3-shell .season-scene-caption {
+  position: absolute;
+  bottom: 16%;
+  left: 9%;
+  right: 9%;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  font-size: 12px;
+  color: #fffdf5;
+}
+.v3-shell .season-scene-caption > span:first-child {
+  letter-spacing: 0.24em;
+  font-size: 10px;
+}
+.v3-shell .season-atmosphere {
+  position: absolute;
+  inset: -8%;
+  z-index: -1;
+  pointer-events: none;
+}
+.v3-shell .season-atmosphere i {
+  display: block;
+  position: absolute;
+  inset: 0;
+}
+.v3-shell .season-scene--spring .season-atmosphere {
+  background: radial-gradient(
+    ellipse at 74% 68%,
+    rgba(229, 239, 232, 0.065),
+    transparent 48%
+  );
+}
+.v3-shell .season-scene--summer .season-atmosphere {
+  background: linear-gradient(
+    115deg,
+    transparent 36%,
+    rgba(255, 246, 216, 0.035) 49%,
+    transparent 57%
+  );
+}
+.v3-shell .season-scene--autumn .season-atmosphere {
+  background: radial-gradient(
+    ellipse at 54% 48%,
+    rgba(239, 231, 213, 0.045),
+    transparent 45%
+  );
+}
+.v3-shell .season-scene--winter .season-atmosphere i:first-child {
+  background:
+    radial-gradient(
+      circle at 14% 20%,
+      rgba(255, 255, 255, 0.5) 0 1px,
+      transparent 2px
+    ),
+    radial-gradient(
+      circle at 68% 31%,
+      rgba(255, 255, 255, 0.48) 0 1px,
+      transparent 2px
+    ),
+    radial-gradient(
+      circle at 86% 55%,
+      rgba(255, 255, 255, 0.45) 0 1.2px,
+      transparent 2.2px
+    ),
+    radial-gradient(
+      circle at 37% 75%,
+      rgba(255, 255, 255, 0.4) 0 0.7px,
+      transparent 1.8px
+    );
+}
+.v3-shell .season-scene--winter .season-atmosphere i:nth-child(2) {
+  background: radial-gradient(
+    ellipse at 50% 70%,
+    rgba(229, 242, 251, 0.055),
+    transparent 45%
+  );
+}
+.v3-shell .season-photo-error {
+  position: absolute;
+  bottom: 18%;
+  left: 9%;
+  font-size: 12px;
+  color: #fff;
+}
+.v3-shell .season-rail {
+  position: absolute;
+  top: 42%;
+  right: 4.3%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 3px 0 3px 17px;
+}
+.v3-shell .season-rail-track {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.28);
+}
+.v3-shell .season-rail-track i {
+  display: block;
+  width: 2px;
+  height: 100%;
+  background: #f7b288;
+  transform: scaleY(var(--season-progress));
+  transform-origin: 50% 0;
+}
+.v3-shell .season-rail button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 5px 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  text-shadow: 0 1px 5px rgba(0, 15, 20, 0.6);
+}
+.v3-shell .season-rail button > span {
+  font-size: 14px;
+}
+.v3-shell .season-rail small {
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 0.25s;
+  font-family: "SmartTripSeasonNotes", "KaiTi", serif;
+  font-size: 16px;
+}
+.v3-shell .season-rail :is(.is-current, button:hover, button:focus-visible) {
+  color: #ffd0af;
+}
+.v3-shell
+  .season-rail
+  :is(.is-current, button:hover, button:focus-visible)
+  small {
+  max-width: 80px;
+}
+.v3-shell .season-bottom-bar {
+  position: absolute;
+  bottom: max(30px, env(safe-area-inset-bottom));
+  left: 6.4%;
+  right: 6.4%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.v3-shell .season-scroll-cue {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 230px;
+  font-family: "SmartTripSeasonNotes", "KaiTi", serif;
+  font-size: 24px;
+  letter-spacing: 0.045em;
+}
+.v3-shell .season-scroll-line {
+  height: 36px;
+  width: 1px;
+  background: linear-gradient(transparent, #fff);
+}
+.v3-shell .season-scroll-cue small {
+  display: block;
+  color: #e0e8e6;
+  font-size: 17px;
+  line-height: 1.55;
+  margin-top: 5px;
+}
+.v3-shell .season-action-dock {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 14px;
+  background: linear-gradient(
+    125deg,
+    rgba(255, 255, 255, 0.12),
+    rgba(234, 250, 255, 0.06)
+  );
+  -webkit-backdrop-filter: blur(3px) saturate(1.1);
+  backdrop-filter: blur(3px) saturate(1.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 6px 20px rgba(0, 15, 24, 0.12);
+}
+.v3-shell .season-action-dock a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 44px;
+  padding: 9px 19px;
+  border-radius: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.v3-shell .season-action-dock .season-start-link {
+  background: #c84b17;
+  color: #fff;
+}
+.v3-shell .season-action-dock .season-start-link:hover {
+  background: #a43c13;
+}
+.v3-shell .season-action-dock a:not(.season-start-link):hover {
+  background: rgba(255, 255, 255, 0.13);
+}
+.v3-shell .season-action-dock .icon {
+  width: 17px;
+  height: 17px;
+}
+.v3-shell .season-skip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  border: 0;
+  padding: 8px 0;
+  background: none;
+  font-size: 12px;
+}
+.v3-shell .season-skip .icon {
+  width: 15px;
+  height: 15px;
+  transform: rotate(90deg);
+}
+
+.v3-shell .season-closing {
+  position: relative;
+  min-height: 82svh;
+  padding: 120px 9% 70px;
+  scroll-margin-top: 115px;
+  background: #edf6fb url("../assets/seasons/journey-paper.webp") center / cover
+    no-repeat;
+  color: #203f50;
+  isolation: isolate;
+}
+
+.v3-shell .season-closing::before,
+.v3-shell .season-closing::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  pointer-events: none;
+  height: clamp(90px, 15vh, 160px);
+}
+
+.v3-shell .season-closing::before {
+  top: 0;
+  background: linear-gradient(
+    180deg,
+    #edf6fb,
+    rgba(237, 246, 251, 0.62) 32%,
+    transparent
+  );
+}
+
+.v3-shell .season-closing::after {
+  bottom: 0;
+  background: linear-gradient(0deg, #fffaf1, transparent);
+}
+.v3-shell .season-closing-intro > p {
+  font-size: 14px;
+  color: #486574;
+}
+.v3-shell .season-closing h2 {
+  margin-top: 28px;
+  font-family: "SmartTripSeasons", "KaiTi", serif;
+  font-size: clamp(56px, 6.5vw, 106px);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+}
+.v3-shell .season-closing h2 span {
+  color: #b74a1e;
+}
+.v3-shell .season-closing-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 32px;
+  margin-top: 38px;
+}
+.v3-shell .season-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 30px;
+  min-height: 52px;
+  padding: 14px 24px;
+  border-radius: 10px;
+  background: #c84b17;
+  color: #fff;
+}
+.v3-shell .season-primary:hover {
+  background: #a43c13;
+}
+.v3-shell .season-explore {
+  display: inline-flex;
+  gap: 15px;
+  align-items: center;
+  min-height: 44px;
+  padding-block: 6px;
+  font-size: 13px;
+  color: #365364;
+}
+.v3-shell .season-explore:hover {
+  text-decoration: underline;
+  text-underline-offset: 6px;
+}
+.v3-shell .season-return {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-top: 80px;
+  padding: 27px 0;
+  border-block: 1px solid rgba(71, 104, 119, 0.23);
+}
+.v3-shell .season-return > .icon {
+  width: 28px;
+  height: 28px;
+  color: #b54b22;
+}
+.v3-shell .season-return > div {
+  flex: 1;
+  min-width: 0;
+}
+.v3-shell .season-return strong {
+  font-size: 15px;
+  font-weight: 500;
+}
+.v3-shell .season-return p {
+  margin-top: 5px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: #526b76;
+}
+.v3-shell .season-return > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  min-height: 44px;
+  font-size: 13px;
+}
+.v3-shell .season-return > a:hover {
+  color: #9e3c16;
+}
+.v3-shell .season-retry {
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  text-decoration: underline;
+  font-size: 13px;
+  color: #984222;
+}
+.v3-shell .home-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+  padding: 32px 6.4% 38px;
+  background: #fffaf1;
+  color: #203f50;
+}
+.v3-shell .home-footer .brand {
+  font-size: 22px;
+}
+.v3-shell .home-footer .brand > .icon {
+  width: 28px;
+  height: 28px;
+}
+.v3-shell .home-footer .brand-cn {
+  font-size: 10px;
+}
+.v3-shell .home-footer > span {
+  font-size: 12px;
+  color: #526b76;
+}
+.v3-shell .home-footer > a:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+  font-size: 12px;
+}
+
+/* A calm, native document remains readable without spatial motion or a loaded engine. */
+.v3-shell
+  .season-journey:is([data-motion="reduced"], [data-motion="static"])
+  .season-stage {
+  height: auto;
+  min-height: 0;
+}
+.v3-shell
+  .season-journey:is([data-motion="reduced"], [data-motion="static"])
+  .season-scenes {
+  height: auto;
+}
+.v3-shell
+  .season-journey:is([data-motion="reduced"], [data-motion="static"])
+  .season-scene {
+  position: relative;
+  height: 100svh;
+  min-height: 560px;
+  scroll-margin-top: 0;
+}
+.v3-shell
+  .season-journey:is([data-motion="reduced"], [data-motion="static"])
+  :is(.season-rail, .season-scroll-cue, .season-atmosphere, .season-skip) {
+  display: none;
+}
+.v3-shell
+  .season-journey:is([data-motion="reduced"], [data-motion="static"])
+  .season-bottom-bar {
+  position: relative;
+  inset: auto;
+  justify-content: center;
+  padding: 22px 20px;
+  background: #edf6fb;
+  color: #234757;
+}
+
+@media (max-width: 1100px) {
+  .v3-shell .home-header {
+    gap: 18px;
+    padding-inline: 20px;
+    width: 92%;
+  }
+  .v3-shell .home-header nav {
+    gap: 23px;
+    font-size: 15px;
+  }
+  .v3-shell .account-name {
+    display: none;
+  }
+  .v3-shell .season-copy {
+    left: 7%;
+  }
+  .v3-shell .season-scene--summer .season-copy {
+    left: 39%;
+    max-width: 52%;
+  }
+  .v3-shell .season-scene--autumn .season-copy {
+    left: 34%;
+    max-width: 58%;
+  }
+  .v3-shell .season-rail {
+    right: 3%;
+  }
+  .v3-shell .season-rail small {
+    display: none;
+  }
+  .v3-shell .season-bottom-bar {
+    gap: 16px;
+    left: 5%;
+    right: 5%;
+  }
+  .v3-shell .season-scroll-cue {
+    min-width: 0;
+    font-size: 21px;
+  }
+  .v3-shell .season-skip {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  .v3-shell .home-header {
+    top: 12px;
+    width: calc(100% - 24px);
+    min-height: 0;
+    padding: 12px 16px 6px;
+    grid-template-columns: 1fr auto;
+    gap: 8px 12px;
+    border-radius: 16px;
+  }
+  .v3-shell .home-header .brand {
+    font-size: 24px;
+    gap: 9px;
+  }
+  .v3-shell .brand > .icon {
+    width: 29px;
+    height: 29px;
+  }
+  .v3-shell .brand-cn {
+    margin-top: 4px;
+    font-size: 10px;
+  }
+  .v3-shell .home-header nav {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-content: space-around;
+    gap: 18px;
+    font-size: 13px;
+  }
+  .v3-shell .home-header .account {
+    grid-column: 2;
+    grid-row: 1;
+    gap: 10px;
+    font-size: 12px;
+  }
+  .v3-shell .home-account-link :is(img, .avatar-letter) {
+    width: 32px;
+    height: 32px;
+  }
+  .v3-shell .home-login {
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 12px;
+    border-radius: 9px;
+  }
+  .v3-shell .season-stage {
+    min-height: 560px;
+  }
+  .v3-shell .season-copy {
+    left: 24px;
+    right: 24px;
+    bottom: 28%;
+    max-width: none;
+  }
+  .v3-shell .season-copy h2 {
+    font-size: clamp(42px, 12.8vw, 76px);
+  }
+  .v3-shell .season-copy .season-story {
+    margin-top: 21px;
+    font-size: 19px;
+    max-width: 100%;
+    line-height: 1.55;
+  }
+  .v3-shell .season-scene--spring .season-photo {
+    object-position: 67% 50%;
+  }
+  .v3-shell .season-scene--summer .season-photo {
+    object-position: 63% 50%;
+  }
+  .v3-shell .season-scene--autumn .season-photo {
+    object-position: 63% 50%;
+  }
+  .v3-shell .season-scene--winter .season-photo {
+    object-position: 59% 50%;
+  }
+  .v3-shell .season-scene--summer .season-copy {
+    left: 40px;
+    right: 24px;
+    bottom: 28%;
+    max-width: none;
+  }
+  .v3-shell .season-scene--autumn .season-copy {
+    left: 24px;
+    right: 24px;
+    bottom: 28%;
+    max-width: none;
+  }
+  .v3-shell .season-scene--winter .season-copy {
+    left: 24px;
+    right: 24px;
+    bottom: 31%;
+  }
+  .v3-shell .season-scene--winter .season-line-mask + .season-line-mask {
+    font-size: 0.45em;
+    letter-spacing: 0.02em;
+  }
+  .v3-shell .season-glyph {
+    top: 26%;
+    right: 12%;
+    font-size: 132px;
+  }
+  .v3-shell .season-scene--summer .season-glyph {
+    top: 23%;
+    bottom: auto;
+    left: 12%;
+  }
+  .v3-shell .season-scene--autumn .season-glyph {
+    top: 24%;
+    left: auto;
+    right: 10%;
+  }
+  .v3-shell .season-scene--winter .season-glyph {
+    top: 25%;
+    right: 9%;
+    font-size: 105px;
+  }
+  .v3-shell .season-scene-caption {
+    bottom: 22%;
+    left: 24px;
+    right: 24px;
+    gap: 12px;
+    font-size: 10px;
+  }
+  .v3-shell .season-scene-caption > span:first-child {
+    font-size: 9px;
+  }
+  .v3-shell .season-rail {
+    top: auto;
+    bottom: 15%;
+    right: 24px;
+    left: 24px;
+    padding: 0;
+    flex-direction: row;
+    gap: 19px;
+    justify-content: flex-end;
+  }
+  .v3-shell .season-rail-track {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    width: 100%;
+  }
+  .v3-shell .season-rail-track i {
+    width: 100%;
+    height: 2px;
+    transform: scaleX(var(--season-progress));
+    transform-origin: 0 50%;
+  }
+  .v3-shell .season-rail button {
+    justify-content: center;
+    min-width: 36px;
+    min-height: 44px;
+    padding-bottom: 7px;
+  }
+  .v3-shell .season-rail .is-current {
+    font-weight: 700;
+  }
+  .v3-shell .season-bottom-bar {
+    bottom: max(20px, env(safe-area-inset-bottom));
+    left: 20px;
+    right: 20px;
+    justify-content: center;
+  }
+  .v3-shell .season-scroll-cue {
+    display: none;
+  }
+  .v3-shell .season-action-dock {
+    width: 100%;
+    justify-content: space-between;
+    gap: 2px;
+    padding: 5px;
+  }
+  .v3-shell .season-action-dock a {
+    flex: 1;
+    gap: 7px;
+    padding: 9px 7px;
+    font-size: 12px;
+  }
+  .v3-shell .season-action-dock .season-start-link {
+    flex: 1.2;
+  }
+  .v3-shell .season-closing {
+    padding: 85px 24px 40px;
+    min-height: 75svh;
+  }
+  .v3-shell .season-closing h2 {
+    font-size: clamp(43px, 12.6vw, 72px);
+  }
+  .v3-shell .season-closing-intro > p {
+    font-size: 12px;
+  }
+  .v3-shell .season-closing-actions {
+    gap: 22px;
+  }
+  .v3-shell .season-primary {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .v3-shell .season-return {
+    flex-wrap: wrap;
+    gap: 15px;
+    margin-top: 52px;
+  }
+  .v3-shell .season-return > a {
+    width: 100%;
+    padding-top: 6px;
+    margin-left: 43px;
+  }
+  .v3-shell .home-footer {
+    flex-wrap: wrap;
+    gap: 24px;
+    padding: 24px 24px 35px;
+  }
+  .v3-shell .home-footer > span {
+    max-width: 160px;
+    font-size: 10px;
+  }
+  .v3-shell .home-footer > a:last-child {
+    width: 100%;
+    justify-content: space-between;
+    padding-top: 18px;
+    border-top: 1px solid rgba(71, 104, 119, 0.2);
+  }
+  .v3-shell .season-photo-error {
+    bottom: 20%;
+    left: 24px;
+    right: 24px;
+    font-size: 10px;
+  }
+  .v3-shell .season-scene-caption > span:last-child {
+    font-size: 18px;
+    max-width: 70%;
+  }
+  .v3-shell .season-closing {
+    background-image: url("../assets/seasons/journey-paper-compact.webp");
+  }
+}
+@media (max-height: 580px) {
+  .v3-shell .season-stage {
+    min-height: 0;
+  }
+  .v3-shell .home-header {
+    top: 8px;
+    min-height: 64px;
+    padding-block: 6px;
+  }
+  .v3-shell .season-copy {
+    bottom: 24%;
+  }
+  .v3-shell .season-copy h2 {
+    font-size: clamp(38px, 10vh, 64px);
+  }
+  .v3-shell .season-copy .season-story {
+    margin-top: 12px;
+    font-size: 18px;
+  }
+  .v3-shell .season-glyph {
+    font-size: 120px;
+  }
+  .v3-shell .season-scene-caption {
+    display: none;
+  }
+  .v3-shell .season-bottom-bar {
+    bottom: 12px;
+  }
+  .v3-shell .season-rail {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .v3-shell :is(*, *::before, *::after) {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media (max-height: 480px) {
+  .v3-shell .season-copy .season-story {
+    display: none;
+  }
+  .v3-shell .season-copy h2 {
+    font-size: clamp(32px, 10vh, 48px);
+  }
+}

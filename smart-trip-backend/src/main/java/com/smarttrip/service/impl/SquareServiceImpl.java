@@ -1,93 +1,75 @@
 package com.smarttrip.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.smarttrip.common.BusinessException;
+import com.smarttrip.common.PageResult;
 import com.smarttrip.entity.*;
 import com.smarttrip.mapper.SquareMapper;
 import com.smarttrip.mapper.TripMapper;
+import com.smarttrip.mapper.UserMapper;
 import com.smarttrip.service.SquareService;
 import com.smarttrip.service.TripService;
+import java.util.Collections;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.ArrayList;
-import java.util.List;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class SquareServiceImpl implements SquareService {
 
-    private final SquareMapper squareMapper;
-    private final TripService tripService;
+  private final SquareMapper squareMapper;
+  private final com.smarttrip.service.CommunityService community;
+  private final TripMapper tripMapper;
+  private final UserMapper userMapper;
+  private final TripService tripService;
+  private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Override
-    public List<SquareTripVO> getSquareTrips() {
-        List<SquareTripVO> list = squareMapper.selectSquareTrips();
-        // 如果数据库没有公开数据，返回 3 组精美的高保真实时演示广场卡片！
-        if (list == null || list.isEmpty()) {
-            list = new ArrayList<>();
-            list.add(createMockSquareVO(200501L, "3天2晚 成都微醺美食与古蜀探秘之旅", "成都", 3, "3000.00", "美食探索", 156, 42, "智游体验官"));
-            list.add(createMockSquareVO(200502L, "5天4晚 大理洱海环湖慢生活深度游", "大理", 5, "4500.00", "休闲度假", 289, 78, "风之旅者"));
-            list.add(createMockSquareVO(200503L, "2天1晚 西安大唐不夜城特种兵打卡", "西安", 2, "1200.00", "特种兵打卡", 95, 18, "西北老饕"));
-        }
-        return list;
-    }
+  /** 【彻底去硬编码重构】：直接从 MySQL 动态拉取 is_featured=1 的官方精选路线 */
+  @Override
+  public List<FeaturedThemeVO> getFeaturedThemedTrips() {
+    log.info("【动态精选模板拉取】正在从 MySQL 查询 is_featured=1 的官方精选路线资产");
+    List<FeaturedThemeVO> list = squareMapper.selectFeaturedThemedTrips();
+    return list != null ? list : Collections.emptyList();
+  }
 
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public Long cloneTrip(Long sourceTripId, Long currentUserId) {
-        // 如果未取到 userId (防空兜底，默认绑定给管理员 id: 1)
-        if (currentUserId == null) {
-            currentUserId = 1L;
-        }
+  @Override
+  public PageResult<SquareTripVO> searchSquareTrips(SquareQueryDTO query) {
+    if (query.getPageNum() == null || query.getPageNum() < 1) query.setPageNum(1);
+    if (query.getPageSize() == null || query.getPageSize() < 1) query.setPageSize(8);
+    query.setPageSize(Math.min(query.getPageSize(), 50));
+    if (query.getSortType() == null || query.getSortType().isBlank()) query.setSortType("HOT");
 
-        log.info("用户 [{}] 正在一键克隆路书 [{}]", currentUserId, sourceTripId);
+    long total = squareMapper.countSquareTrips(query);
+    int offset = (query.getPageNum() - 1) * query.getPageSize();
+    List<SquareTripVO> list = squareMapper.selectSquareTripsPaged(query, offset);
 
-        // 1. 获取原路书全量树状数据
-        TripDetailVO sourceTrip = tripService.getTripDetail(sourceTripId);
+    return new PageResult<>(total, query.getPageNum(), query.getPageSize(), list);
+  }
 
-        // 2. 深度复制主表 (关键：绑定当前操作者的 userId)
-        sourceTrip.setUserId(currentUserId);
-        sourceTrip.setTitle(sourceTrip.getTitle() + " (克隆副本)");
-        squareMapper.insertCloneTrip(sourceTrip);
-        Long newTripId = sourceTrip.getId();
+  @Override
+  @Transactional(rollbackFor = Exception.class)
+  public Long publishOrSyncTrip(Long tripId, Long currentUserId) {
+    community.publish(tripId);
+    return tripId;
+  }
 
-        // 3. 深度复制所有天数和节点
-        if (sourceTrip.getDays() != null) {
-            for (TripDayVO day : sourceTrip.getDays()) {
-                day.setTripId(newTripId);
-                squareMapper.insertCloneDay(day);
-                Long newDayId = day.getId();
+  @Override
+  @Transactional(rollbackFor = Exception.class)
+  public void unpublishTrip(Long tripId, Long currentUserId) {
+    community.unpublish(tripId);
+  }
 
-                if (day.getItems() != null) {
-                    for (TripItem item : day.getItems()) {
-                        item.setTripId(newTripId);
-                        item.setDayId(newDayId);
-                        squareMapper.insertCloneItem(item);
-                    }
-                }
-            }
-        }
+  @Override
+  @Transactional(rollbackFor = Exception.class)
+  public Long cloneFromSnapshot(Long squarePostId, Long currentUserId) {
+    return community.clonePost(squarePostId).getId();
+  }
 
-        // 4. 原路书克隆计数 +1
-        squareMapper.incrementCloneCount(sourceTripId);
-        log.info("路书克隆成功！新路书 ID: {}", newTripId);
-
-        return newTripId != null ? newTripId : 200501L;
-    }
-
-    private SquareTripVO createMockSquareVO(Long id, String title, String dest, int days, String budget, String style, int likes, int clones, String author) {
-        SquareTripVO vo = new SquareTripVO();
-        vo.setId(id);
-        vo.setTitle(title);
-        vo.setDestination(dest);
-        vo.setTotalDays(days);
-        vo.setTotalBudget(new java.math.BigDecimal(budget));
-        vo.setTripStyle(style);
-        vo.setLikeCount(likes);
-        vo.setCloneCount(clones);
-        vo.setAuthorNickname(author);
-        return vo;
-    }
+  private Long cloneFromPrivateTrip(TripDetailVO sourceTrip, Long currentUserId) {
+    throw new BusinessException(403, "私密路书不能通过广场克隆");
+  }
 }

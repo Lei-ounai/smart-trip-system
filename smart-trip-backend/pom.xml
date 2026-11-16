@@ -28,8 +28,15 @@
     </scm>
     <properties>
         <java.version>17</java.version>
+        <spring-ai.version>2.0.1</spring-ai.version>
+        <smarttrip.build-dir>${project.basedir}/target</smarttrip.build-dir>
     </properties>
     <dependencies>
+        <dependency><groupId>com.fasterxml.jackson.datatype</groupId><artifactId>jackson-datatype-jsr310</artifactId></dependency>
+        <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-crypto</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-flyway</artifactId></dependency>
+        <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-mysql</artifactId></dependency>
         <!-- JWT 鉴权依赖 (jjwt) -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>
@@ -64,16 +71,33 @@
             <version>4.0.1</version>
         </dependency>
 
-        <!-- OkHttp3 用于调用大模型流式接口 -->
+        <!-- Spring AI ChatClient; SDK retries/tools are disabled in AiProvider. -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-openai</artifactId>
+            <version>${spring-ai.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-client-chat</artifactId>
+            <version>${spring-ai.version}</version>
+        </dependency>
+        <!-- RAG embedding and ETL only; no second ChatModel auto-configuration. -->
+        <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-ollama</artifactId><version>${spring-ai.version}</version></dependency>
+        <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-markdown-document-reader</artifactId><version>${spring-ai.version}</version></dependency>
+        <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-pdf-document-reader</artifactId><version>${spring-ai.version}</version></dependency>
+        <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-core</artifactId></dependency>
+        <dependency><groupId>org.springframework.ai</groupId><artifactId>spring-ai-starter-mcp-server-webmvc</artifactId><version>${spring-ai.version}</version></dependency>
+        <!-- Existing geographic providers and fixed-response tests use OkHttp. -->
         <dependency>
             <groupId>com.squareup.okhttp3</groupId>
             <artifactId>okhttp</artifactId>
             <version>4.12.0</version>
         </dependency>
+
         <dependency>
-            <groupId>com.squareup.okhttp3</groupId>
-            <artifactId>okhttp-sse</artifactId>
-            <version>4.12.0</version>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
 
         <dependency>
@@ -100,6 +124,7 @@
     </dependencies>
 
     <build>
+        <directory>${smarttrip.build-dir}</directory>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

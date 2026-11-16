@@ -1,34 +1,128 @@
+logging:
+  pattern:
+    level: "%5p [traceId=%X{traceId:-none} taskId=%X{taskId:-none}]"
+observability:
+  request-timing-enabled: true
+  slow-request-millis: 500
 server:
-  port: 8080
-
+  # Auth IP resolution only trusts explicitly configured proxy addresses.
+  forward-headers-strategy: none
+  port: ${SMARTTRIP_PORT:8080}
 spring:
+  ai:
+    mcp:
+      server:
+        enabled: ${smarttrip.mcp.server.enabled:false}
+        protocol: STREAMABLE
+        name: smarttrip-travel-tools
+        version: 2.0.0
+        type: SYNC
+        tool-callback-converter: false
+        capabilities:
+          resource: false
+          prompt: false
+          completion: false
+        streamable-http:
+          mcp-endpoint: /api/mcp
+  config:
+    import: optional:file:${SMARTTRIP_CONFIG:../.local/application-local.yml}
   application:
     name: smart-trip-backend
   datasource:
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/smart_trip?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: root          # ???? MySQL ???
-    password: 1234 # ???? MySQL ??
-  mvc:
-    async:
-      request-timeout: 300000 # 设置异步长连接超时为 5 分钟 (300秒)
-
-# MyBatis ??
+    url: ${SMARTTRIP_DB_URL:jdbc:mysql://localhost:3306/smart_trip_demo?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${SMARTTRIP_DB_USER:root}
+    password: ${SMARTTRIP_DB_PASSWORD:}
+  data:
+    redis:
+      host: ${SMARTTRIP_REDIS_HOST:localhost}
+      port: ${SMARTTRIP_REDIS_PORT:6379}
+  flyway:
+    enabled: true
+    clean-disabled: true
+    locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: 2MB
+      max-request-size: 3MB
 mybatis:
-  mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: com.smarttrip.entity
   configuration:
-    map-underscore-to-camel-case: true # ?????????? (? user_id -> userId)
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl # ????????? SQL?????
-
-# ??????
-logging:
-  level:
-    com.smarttrip: debug
-
-# 大模型配置
+    map-underscore-to-camel-case: true
+security:
+  jwt-secret: ${SMARTTRIP_JWT_SECRET:}
+  auth-limits:
+    login-ip-limit: 30
+    login-ip-window-seconds: 60
+    register-ip-limit: 5
+    register-ip-window-seconds: 3600
+    pair-failure-limit: 5
+    account-failure-limit: 20
+    failure-window-seconds: 900
+    cooldown-seconds: 300
+    trusted-proxies: []
 ai:
   llm:
-    base-url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    api-key: sk-ws-H.EXLMRDI.xHyr.MEUCIQCYhbJlv_4fshU78kX266nknKFcDgg9Ha_DpWpg5wG8PQIgPDNZOjN-YDr536iV07STqbOBlcJ9dxBE3qLN2vC35nA # 务必换成你的真实 sk-xxx
-    model: qwen3.8-flash
+    enabled: ${SMARTTRIP_AI_ENABLED:false}
+    free-quota-verified: ${SMARTTRIP_AI_FREE_QUOTA_VERIFIED:false}
+    base-url: ${SMARTTRIP_AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    api-key: ${SMARTTRIP_AI_KEY:}
+    model: ${SMARTTRIP_AI_MODEL:qwen3.8-flash}
+    max-output-tokens: ${SMARTTRIP_AI_MAX_OUTPUT_TOKENS:8192}
+geo:
+  enabled: ${SMARTTRIP_GEO_ENABLED:false}
+  poi-enabled: ${SMARTTRIP_POI_ENABLED:false}
+  route-enabled: ${SMARTTRIP_ROUTE_ENABLED:false}
+  weather-enabled: ${SMARTTRIP_WEATHER_ENABLED:false}
+  map-enabled: ${SMARTTRIP_MAP_ENABLED:false}
+  free-quota-verified: ${SMARTTRIP_GEO_FREE_QUOTA_VERIFIED:false}
+  amap-key: ${SMARTTRIP_AMAP_KEY:}
+  amap-js-key: ${SMARTTRIP_AMAP_JS_KEY:}
+  amap-security-key: ${SMARTTRIP_AMAP_SECURITY_KEY:}
+storage:
+  upload-dir: ${SMARTTRIP_UPLOAD_DIR:../.local/uploads}
+
+# RAG is independent of paid ChatModel readiness; never enabled by default.
+smarttrip:
+  agent:
+    enabled: ${SMARTTRIP_AGENT_ENABLED:false}
+    tool-calling-verified: ${SMARTTRIP_AGENT_TOOL_CALLING_VERIFIED:false}
+    verified-model: ${SMARTTRIP_AGENT_VERIFIED_MODEL:}
+    verified-base-url: ${SMARTTRIP_AGENT_VERIFIED_BASE_URL:}
+    max-agent-model-turns: 4
+    max-tool-calls: 5
+    max-total-model-calls: 5
+    max-execution-seconds: 90
+    tool-timeout-seconds: 10
+    max-tool-result-characters: 4000
+    pricing-model: ${SMARTTRIP_AGENT_PRICING_MODEL:}
+    price-currency: ${SMARTTRIP_AGENT_PRICE_CURRENCY:}
+    input-price-per-million: ${SMARTTRIP_AGENT_INPUT_PRICE_PER_MILLION:}
+    output-price-per-million: ${SMARTTRIP_AGENT_OUTPUT_PRICE_PER_MILLION:}
+  mcp:
+    server:
+      enabled: ${SMARTTRIP_MCP_ENABLED:false}
+      allow-private-network: false
+      requests-per-minute: 30
+  rag:
+    enabled: ${SMARTTRIP_RAG_ENABLED:false}
+    fallback-to-original: ${SMARTTRIP_RAG_FALLBACK:true}
+    retrieval-top-k: ${SMARTTRIP_RAG_TOP_K:10}
+    context-top-k: ${SMARTTRIP_RAG_CONTEXT_TOP_K:5}
+    rrf-k: ${SMARTTRIP_RAG_RRF_K:60}
+    context-token-budget: ${SMARTTRIP_RAG_CONTEXT_TOKENS:1800}
+    max-source-age-days: ${SMARTTRIP_RAG_MAX_SOURCE_AGE_DAYS:1095}
+    include-test-knowledge: false
+    retrieval-timeout-millis: ${SMARTTRIP_RAG_RETRIEVAL_TIMEOUT_MS:6000}
+    elasticsearch-url: ${SMARTTRIP_RAG_ES_URL:http://127.0.0.1:9200}
+    elasticsearch-username: ${SMARTTRIP_RAG_ES_USERNAME:elastic}
+    elasticsearch-password: ${SMARTTRIP_RAG_ES_PASSWORD:}
+    index-name: ${SMARTTRIP_RAG_INDEX:smarttrip-travel-v1}
+    embedding-base-url: ${SMARTTRIP_RAG_EMBEDDING_URL:http://127.0.0.1:11434}
+    embedding-model: ${SMARTTRIP_RAG_EMBEDDING_MODEL:bge-m3}
+    embedding-version: ${SMARTTRIP_RAG_EMBEDDING_VERSION:v1}
+    embedding-timeout-millis: ${SMARTTRIP_RAG_EMBEDDING_TIMEOUT_MS:4000}
+    chunk-tokens: ${SMARTTRIP_RAG_CHUNK_TOKENS:384}
+    chunk-overlap-tokens: ${SMARTTRIP_RAG_CHUNK_OVERLAP:48}
+    ingestion-timeout-millis: ${SMARTTRIP_RAG_INGESTION_TIMEOUT_MS:120000}
+    rerank-enabled: ${SMARTTRIP_RAG_RERANK_ENABLED:false}
+    rerank-url: ${SMARTTRIP_RAG_RERANK_URL:http://127.0.0.1:8010/rerank}
+    rerank-timeout-millis: ${SMARTTRIP_RAG_RERANK_TIMEOUT_MS:1500}

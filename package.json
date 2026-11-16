@@ -1,5 +1,11 @@
 {
-  "dependencies": {
-    "marked": "^18.0.11"
+  "name": "smarttrip",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix smart-trip-frontend run dev",
+    "build": "npm --prefix smart-trip-frontend run build",
+    "typecheck": "npm --prefix smart-trip-frontend run typecheck",
+    "test": "npm --prefix smart-trip-frontend run test",
+    "e2e": "npm --prefix smart-trip-frontend run e2e"
   }
 }
