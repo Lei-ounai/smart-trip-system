@@ -56,6 +56,7 @@ class AiRagWorkflowTests {
   private Map<String, Object> row;
   private TripDetailVO saved;
   private boolean failSnapshotWrite;
+  private final List<com.smarttrip.agent.TravelAgentToolService> agentTools=new ArrayList<>();
 
   @BeforeEach
   void setup() {
@@ -98,6 +99,13 @@ class AiRagWorkflowTests {
     when(db.queryForMap(anyString(), any(Object[].class))).thenAnswer(invocation -> row);
     when(db.queryForList(anyString(), any(Object[].class))).thenAnswer(invocation -> {
       String sql = invocation.getArgument(0);
+      if (sql.equals("SELECT id FROM sys_user WHERE id=? FOR UPDATE")) return List.of(Map.of("id", 7L));
+      if (sql.contains("status='RUNNING' AND id<>?")) {
+        boolean otherRunning = "RUNNING".equals(row.get("status"))
+            && Objects.equals(row.get("user_id"), invocation.getArgument(1))
+            && !Objects.equals(row.get("id"), invocation.getArgument(2));
+        return otherRunning ? List.of(row) : List.of();
+      }
       if (!sql.contains("AS userId")) return List.of(row);
       if (!Objects.equals(access.userId(), row.get("user_id"))) return List.of();
       var view = new LinkedHashMap<String, Object>();
@@ -157,6 +165,7 @@ class AiRagWorkflowTests {
   @AfterEach
   void close() {
     service.shutdown();
+    agentTools.forEach(com.smarttrip.agent.TravelAgentToolService::close);
     UserContext.clear();
   }
 
@@ -413,5 +422,87 @@ class AiRagWorkflowTests {
     verify(provider, times(1)).complete(anyString());
     verify(db, times(1)).update(contains("ai_quota_used=ai_quota_used+1"), eq(7L));
     verify(db, never()).update(startsWith("INSERT INTO"), any(Object[].class));
+  }
+  private com.smarttrip.agent.TravelAgentService enableAgent(boolean fail) {
+    var limits=new com.smarttrip.config.TravelAgentProperties();limits.setEnabled(true);limits.setToolCallingVerified(true);
+    var ai=new AiProperties();limits.setVerifiedModel(ai.getModel());limits.setVerifiedBaseUrl(ai.getBaseUrl());
+    var tools=new com.smarttrip.agent.TravelAgentToolService(mock(GeoService.class));agentTools.add(tools);
+    var counter=new java.util.concurrent.atomic.AtomicInteger();
+    org.springframework.ai.chat.model.ChatModel fixed=new org.springframework.ai.chat.model.ChatModel(){
+      @Override public org.springframework.ai.chat.model.ChatResponse call(org.springframework.ai.chat.prompt.Prompt prompt){
+        assertEquals("RAG_AGENT_MARKER",mapper.valueToTree(metadata().get("rag")).path("fixture").asText());
+        assertTrue(metadata().containsKey("_ragContext"));
+        if(fail)throw new BusinessException(502,"固定Agent响应失败夹具");
+        int n=counter.incrementAndGet();
+        org.springframework.ai.chat.messages.AssistantMessage message;
+        if(n==1)message=org.springframework.ai.chat.messages.AssistantMessage.builder().content("")
+            .toolCalls(List.of(new org.springframework.ai.chat.messages.AssistantMessage.ToolCall("read-knowledge","function","getTravelKnowledge","{}"))).build();
+        else {
+          assertTrue(prompt.getInstructions().stream().anyMatch(m->m instanceof org.springframework.ai.chat.messages.ToolResponseMessage response&&response.getResponses().toString().contains("Agent资料原文")));
+          message=new org.springframework.ai.chat.messages.AssistantMessage("{\"summary\":\"已读取已有知识快照\",\"destinations\":[\"苏州\"],\"days\":1,\"travelers\":null,\"budgetScope\":\"TOTAL\",\"currency\":\"CNY\",\"mustVisit\":[],\"avoid\":[],\"sourceIds\":[\"k1\"],\"weatherClaims\":[]}");
+        }
+        return new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(message,
+            org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason(n==1?"TOOL_CALLS":"STOP").build())),
+            org.springframework.ai.chat.metadata.ChatResponseMetadata.builder().usage(new org.springframework.ai.chat.metadata.DefaultUsage(12,6)).build());
+      }
+    };
+    var client=org.springframework.ai.chat.client.ChatClient.create(fixed);
+    var orchestrator=new com.smarttrip.agent.TravelAgentOrchestrator(provider,tools){
+      @Override protected org.springframework.ai.chat.client.ChatClient client(Duration timeout){return client;}
+    };
+    var agent=new com.smarttrip.agent.TravelAgentService(limits,ai,provider,store,orchestrator,new com.smarttrip.agent.TravelAgentEvaluator(),tools);
+    service.configureAgent(agent);
+    var source=Map.of("chunkId","k1","documentId","public-doc","title","公共知识","sourceName","公开来源","sourceUrl","https://example.org/travel","content","Agent资料原文");
+    var context=new TravelRagContext(com.smarttrip.rag.RagContextBuilder.RULES+"\n"+trips.encode(Map.of("sources",List.of(source))),
+        Map.of("fixture","RAG_AGENT_MARKER","sources",List.of(source),"status","COMPLETED"));
+    properties.setEnabled(true);when(rag.retrieve(any(),eq(ID))).thenReturn(context);
+    return agent;
+  }
+
+  @Test void agentUsesPersistedRagActualToolResultsAndKeepsEditableSaveClosure() {
+    enableAgent(false);
+    doAnswer(invocation->{String prompt=invocation.getArgument(0);assertTrue(prompt.contains("Agent资料原文"));assertTrue(prompt.contains("AGENT_REFERENCE_DATA"));assertTrue(prompt.contains("toolResults"));assertEquals("COMPLETED",mapper.valueToTree(metadata().get("agent")).path("status").asText());return RESPONSE;}).when(provider).complete(anyString());
+    runGeneration();assertEquals("PREVIEW",row.get("status"));
+    assertEquals(3,((List<?>)metadata().get("modelCalls")).size());
+    var lease=org.mockito.ArgumentCaptor.forClass(Duration.class);
+    var lockRedis=(StringRedisTemplate)ReflectionTestUtils.getField(service,"redis");
+    verify(lockRedis.opsForValue()).setIfAbsent(eq("smarttrip:ai:user:7"),eq(ID),lease.capture());
+    assertTrue(lease.getValue().getSeconds()>=276);assertTrue(lease.getValue().getSeconds()<=900);
+    var usage=mapper.valueToTree(metadata().get("modelUsage"));assertEquals(24,usage.path("knownInputTokens").asInt());assertEquals(12,usage.path("knownOutputTokens").asInt());assertFalse(usage.path("tokensComplete").asBoolean());assertTrue(usage.path("estimatedCost").isNull());
+    assertFalse(trips.encode(store.get(ID)).contains("_agentContext"));
+    var draft=editableDraft();draft.setTitle("Agent草稿编辑后保存");store.updateDraft(ID,draft,0L);
+    assertEquals(91L,store.apply(ID,null,1L).getId());assertEquals(91L,store.apply(ID,null,0L).getId());
+    assertEquals("Agent草稿编辑后保存",trips.load(91L).getTitle());runGeneration();
+    verify(rag,times(1)).retrieve(any(),eq(ID));verify(provider,times(1)).complete(anyString());verify(trips,times(1)).createGenerated(any());
+    assertEquals(1,mapper.valueToTree(metadata().get("agent")).path("traces").size());
+  }
+  @Test void agentFailureFailsTaskAndRefundsOnceWithoutFinalGeneration() {
+    enableAgent(true);runGeneration();runGeneration();assertEquals("FAILED",row.get("status"));
+    assertEquals("FAILED",mapper.valueToTree(metadata().get("agent")).path("status").asText());
+    verify(provider,never()).complete(anyString());verify(db,times(1)).update(contains("ai_quota_used=GREATEST"),any(Object[].class));
+    assertEquals(1,((List<?>)metadata().get("modelCalls")).size());
+  }
+  @Test void modelLedgerEnforcesLimitAndCannotBeCompletedTwice() {
+    store.start(ID);int call=store.beginModelCall(ID,"AGENT",1);
+    store.finishModelCall(ID,call,Map.of("status","SUCCEEDED","inputTokens",10,"outputTokens",5,"durationMs",2));
+    store.finishModelCall(ID,call,Map.of("status","SUCCEEDED","inputTokens",100,"outputTokens",100));
+    assertEquals(15,mapper.valueToTree(metadata().get("modelUsage")).path("totalTokens").asInt());
+    assertEquals(422,assertThrows(BusinessException.class,()->store.beginModelCall(ID,"JSON_GENERATION",1)).getCode());
+  }
+  @Test void idempotentRecoveryDoesNotRequireAgentToRemainEnabledOrReady() {
+    enableRag();runGeneration();row.put("request_hash",CommunityService.hash("GENERATE\nnull\n"+trips.encode(requirements.confirmed(requirement()))));
+    var unavailable=mock(com.smarttrip.agent.TravelAgentService.class);doThrow(new BusinessException(503,"fixture-unverified")).when(unavailable).requireReady();service.configureAgent(unavailable);
+    assertEquals(ID,service.submitGeneration("same-request-key",requirement(),true).get("id"));verify(unavailable,never()).requireReady();verify(provider,times(1)).complete(anyString());
+  }
+  @Test void explicitModelScopedRatesEstimateEveryAgentAndFinalCallWithoutPretendingInvoiceCost() {
+    var pricing=new com.smarttrip.config.TravelAgentProperties();pricing.setPricingModel(provider.modelName());pricing.setPriceCurrency("USD");pricing.setInputPricePerMillion(new BigDecimal("0.10"));pricing.setOutputPricePerMillion(new BigDecimal("0.20"));store.configureAgentPricing(pricing);
+    store.start(ID);int first=store.beginModelCall(ID,"AGENT",2);store.finishModelCall(ID,first,Map.of("status","SUCCEEDED","inputTokens",1000000,"outputTokens",500000));
+    int second=store.beginModelCall(ID,"JSON_GENERATION",2);store.finishModelCall(ID,second,Map.of("status","SUCCEEDED","inputTokens",100000,"outputTokens",50000));
+    var usage=mapper.valueToTree(metadata().get("modelUsage"));assertEquals(0,usage.path("estimatedCost").decimalValue().compareTo(new BigDecimal("0.22")));assertEquals("USD",usage.path("costCurrency").asText());assertEquals("ESTIMATED_TOKEN_RATES",usage.path("costStatus").asText());
+  }
+  @Test void mismatchedPricingIsUnknownRatherThanFree() {
+    var pricing=new com.smarttrip.config.TravelAgentProperties();pricing.setPricingModel("other-model");pricing.setPriceCurrency("USD");pricing.setInputPricePerMillion(BigDecimal.ONE);pricing.setOutputPricePerMillion(BigDecimal.ONE);store.configureAgentPricing(pricing);
+    store.start(ID);int call=store.beginModelCall(ID,"AGENT",1);store.finishModelCall(ID,call,Map.of("status","SUCCEEDED","inputTokens",10,"outputTokens",5));
+    var usage=mapper.valueToTree(metadata().get("modelUsage"));assertTrue(usage.path("estimatedCost").isNull());assertEquals("UNKNOWN_MODEL_PRICING_MISMATCH",usage.path("costStatus").asText());
   }
 }

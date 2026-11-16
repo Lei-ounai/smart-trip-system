@@ -27,6 +27,9 @@ public class AiTaskService {
   private final TravelRequirementService requirements;
   private com.smarttrip.rag.TravelRagService rag;
   private com.smarttrip.config.RagProperties ragProperties;
+  private com.smarttrip.agent.TravelAgentService agent;
+  @org.springframework.beans.factory.annotation.Autowired
+  public void configureAgent(com.smarttrip.agent.TravelAgentService service) { this.agent=service; }
   private final ThreadPoolExecutor pool =
       new ThreadPoolExecutor(
           2,
@@ -93,6 +96,7 @@ public class AiTaskService {
     generation.put("requirement", accepted);
     generation.put("expiresAt", now.plus(Duration.ofHours(24)).toString());
     generation.put("phase", "QUEUED");
+    if(agent!=null && agent.enabled())generation.put("agentEnabled",true);
     generation.put("phaseHistory", List.of(Map.of("phase", "QUEUED", "at", now.toString())));
     return submitTask(key, "GENERATE", null, requirements.prompt(accepted), generation);
   }
@@ -141,6 +145,7 @@ public class AiTaskService {
             user,
             key);
     if (!previous.isEmpty()) return existing(previous.get(0), fingerprint, type, trip, prompt, generation);
+    if ("GENERATE".equals(type) && agent != null) agent.requireReady();
     Long version = null;
     String input = generationPrompt(type, prompt);
     if ("MODIFY".equals(type)) {
@@ -314,7 +319,19 @@ public class AiTaskService {
   }
 
   private boolean acquire(String lock, String id, Long user) {
-    if (Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(lock, id, Duration.ofSeconds(180))))
+    return acquire(lock,id,user,Duration.ofSeconds(180));
+  }
+
+  private Duration generationLease() {
+    long ragMillis=ragProperties!=null&&ragProperties.isEnabled()?Math.max(100L,ragProperties.getRetrievalTimeoutMillis())
+        +(ragProperties.isRerankEnabled()?Math.max(0L,ragProperties.getRerankTimeoutMillis()):0L):0L;
+    long seconds=180L+agent.executionSeconds()+(ragMillis+999)/1000+30;
+    if(seconds>900)throw new BusinessException(503,"Agent任务的检索超时配置过大，未发起模型请求");
+    return Duration.ofSeconds(seconds);
+  }
+
+  private boolean acquire(String lock, String id, Long user, Duration lease) {
+    if (Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(lock, id, lease)))
       return true;
     String prior = redis.opsForValue().get(lock);
     if (prior != null) {
@@ -326,7 +343,7 @@ public class AiTaskService {
       // Compare-and-delete only that terminal task's token; never clear a newer worker.
       release(lock, prior);
     }
-    return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(lock, id, Duration.ofSeconds(180)));
+    return Boolean.TRUE.equals(redis.opsForValue().setIfAbsent(lock, id, lease));
   }
 
   private void release(String lock, String id) {
@@ -389,7 +406,8 @@ public class AiTaskService {
     boolean diagnosticsStored = false;
     provider.takeDiagnostics(); // Never reuse supplier output from another pooled task.
     try {
-      acquired = acquire(lock, id, user);
+      acquired = generating && agent!=null && agent.enabled()
+          ? acquire(lock,id,user,generationLease()) : acquire(lock,id,user);
       if (!acquired) {
         store.fail(id, "已有AI任务运行中，请稍后重试");
         return;
@@ -412,10 +430,26 @@ public class AiTaskService {
         if (generating && rag != null && ragProperties != null && ragProperties.isEnabled()) {
           stage = "RETRIEVING";
           input = withKnowledge(id, input);
-          store.setPhase(id, "MODEL");
+          if (agent == null || !agent.enabled()) store.setPhase(id, "MODEL");
           stage = "MODEL";
         }
-        response = provider.complete(input);
+        if(generating && agent!=null && agent.enabled()) {
+          stage="AGENT";
+          var result=agent.execute(id,user,store.readGenerationRequirement(id),store.existingRagContext(id));
+          input += "\n\n"+result.promptContext();store.setPhase(id,"MODEL");stage="MODEL";
+        }
+        int finalCall=generating?store.beginModelCall(id,"JSON_GENERATION",agent==null?1:agent.maxCalls()):0;
+        long modelStarted=System.nanoTime();
+        try { response = provider.complete(input); }
+        finally {
+          if(generating){
+            var captured=provider.takeDiagnostics();
+            var usage=new LinkedHashMap<String,Object>();if(captured!=null)usage.putAll(captured);
+            usage.put("status",response==null?"FAILED":"SUCCEEDED");usage.put("durationMs",TimeUnit.NANOSECONDS.toMillis(System.nanoTime()-modelStarted));
+            store.finishModelCall(id,finalCall,usage);
+            if(captured!=null)store.recordModelOutput(id,captured);
+          }
+        }
         if (generating) {
           store.setPhase(id, "MODEL_COMPLETED");
           recordModelDiagnostics(id, response, "MODEL_COMPLETED", null);

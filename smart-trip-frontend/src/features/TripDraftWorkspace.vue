@@ -11,6 +11,7 @@ import { onBeforeRouteLeave } from "vue-router";
 import type { Task } from "./types";
 import HomeIcon from "./HomeIcon.vue";
 import RagSources from "./RagSources.vue";
+import AgentExecution from "./AgentExecution.vue";
 import {
   budgetSummary,
   dateLabel,
@@ -1129,6 +1130,7 @@ onBeforeUnmount(() => {
         </section>
 
         <RagSources :task="task" />
+        <AgentExecution :task="task" />
         <details v-if="corrections.length" class="dw-reference dw-glass">
           <summary>
             <span>草稿整理记录</span

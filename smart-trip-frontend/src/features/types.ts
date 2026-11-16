@@ -177,6 +177,15 @@ export interface RagSnapshot {
   sources?: RagSource[];
   candidates?: RagSource[];
 }
+export interface AgentToolTrace {
+  sequence: number; toolName: string; status: string; durationMs: number;
+  sanitizedInputSummary: string; sanitizedOutputSummary: string; errorCode: string; createdAt: string;
+}
+export interface AgentSnapshot {
+  status: string; summary?: string; traces?: AgentToolTrace[]; modelCalls?: number; sources?: RagSource[];
+  evaluation?: { status: string; warnings: string[]; notice: string };
+  toolSources?: { tool: string; dataKind: string; provider: string; date?: string; issuedAt?: string; retrievedAt?: string }[];
+}
 export interface Task {
   id: string;
   type: "GENERATE" | "MODIFY" | "ADJUST" | "INTERPRET";
@@ -197,6 +206,10 @@ export interface Task {
   };
   generation?: {
     rag?: RagSnapshot;
+    agentEnabled?: boolean;
+    agent?: AgentSnapshot;
+    modelCalls?: { sequence: number; operation: string; status: string; durationMs?: number; inputTokens?: number; outputTokens?: number; totalTokens?: number }[];
+    modelUsage?: { attempts: number; knownInputTokens: number; knownOutputTokens: number; tokensComplete: boolean; totalTokens: number | null; durationMs: number; estimatedCost: number | null; knownEstimatedCost?: number; costCurrency?: string | null; costStatus: string };
     requirement: TravelRequirement;
     warnings: string[];
     expiresAt: string;

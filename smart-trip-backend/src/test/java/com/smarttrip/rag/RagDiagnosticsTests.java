@@ -136,6 +136,7 @@ class RagDiagnosticsTests {
   @Test void previewsDoNotReachTaskQuotaDatabaseRedisOrChatBeans() {
     when(embedding.embed(anyString())).thenReturn(new float[]{1,0,0});
     when(es.search(any())).thenReturn(hits(chunk("public","PUBLIC",null,true,"园林慢游")));
+    var agent=mock(com.smarttrip.agent.TravelAgentService.class);
     var task=mock(AiTaskService.class);var store=mock(AiTaskStore.class);var db=mock(JdbcTemplate.class);
     var redis=mock(StringRedisTemplate.class);var chat=mock(ChatClient.class);var provider=mock(AiProvider.class);
     try(var context=new AnnotationConfigApplicationContext()) {
@@ -143,14 +144,15 @@ class RagDiagnosticsTests {
       context.registerBean(KnowledgeIndexService.class,()->index);context.registerBean(TravelRetrievalQueryBuilder.class,()->queries);
       context.registerBean(ElasticsearchHybridRetriever.class,()->retrieval);context.registerBean(TravelRerankService.class,()->new TravelRerankService(config));
       context.registerBean(RagContextBuilder.class,()->new RagContextBuilder(config));context.registerBean(TravelRequirementService.class);
+      context.registerBean(com.smarttrip.agent.TravelAgentService.class,()->agent);
       context.registerBean(AiTaskService.class,()->task);context.registerBean(AiTaskStore.class,()->store);
       context.registerBean(JdbcTemplate.class,()->db);context.registerBean(StringRedisTemplate.class,()->redis);
       context.registerBean(ChatClient.class,()->chat);context.registerBean(AiProvider.class,()->provider);
       context.registerBean(TravelRagService.class);context.registerBean(RagDiagnosticsService.class);context.refresh();
-      clearInvocations(task,store,db,redis,chat,provider);
+      clearInvocations(task,store,db,redis,chat,provider,agent);
       var result=context.getBean(RagDiagnosticsService.class).preview(requirement());
       assertEquals(true,result.get("previewOnly"));
-      verifyNoInteractions(task,store,db,redis,chat,provider);
+      verifyNoInteractions(task,store,db,redis,chat,provider,agent);
     }
   }
 }

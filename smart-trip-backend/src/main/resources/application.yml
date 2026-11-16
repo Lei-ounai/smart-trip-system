@@ -9,6 +9,21 @@ server:
   forward-headers-strategy: none
   port: ${SMARTTRIP_PORT:8080}
 spring:
+  ai:
+    mcp:
+      server:
+        enabled: ${smarttrip.mcp.server.enabled:false}
+        protocol: STREAMABLE
+        name: smarttrip-travel-tools
+        version: 2.0.0
+        type: SYNC
+        tool-callback-converter: false
+        capabilities:
+          resource: false
+          prompt: false
+          completion: false
+        streamable-http:
+          mcp-endpoint: /api/mcp
   config:
     import: optional:file:${SMARTTRIP_CONFIG:../.local/application-local.yml}
   application:
@@ -67,6 +82,26 @@ storage:
 
 # RAG is independent of paid ChatModel readiness; never enabled by default.
 smarttrip:
+  agent:
+    enabled: ${SMARTTRIP_AGENT_ENABLED:false}
+    tool-calling-verified: ${SMARTTRIP_AGENT_TOOL_CALLING_VERIFIED:false}
+    verified-model: ${SMARTTRIP_AGENT_VERIFIED_MODEL:}
+    verified-base-url: ${SMARTTRIP_AGENT_VERIFIED_BASE_URL:}
+    max-agent-model-turns: 4
+    max-tool-calls: 5
+    max-total-model-calls: 5
+    max-execution-seconds: 90
+    tool-timeout-seconds: 10
+    max-tool-result-characters: 4000
+    pricing-model: ${SMARTTRIP_AGENT_PRICING_MODEL:}
+    price-currency: ${SMARTTRIP_AGENT_PRICE_CURRENCY:}
+    input-price-per-million: ${SMARTTRIP_AGENT_INPUT_PRICE_PER_MILLION:}
+    output-price-per-million: ${SMARTTRIP_AGENT_OUTPUT_PRICE_PER_MILLION:}
+  mcp:
+    server:
+      enabled: ${SMARTTRIP_MCP_ENABLED:false}
+      allow-private-network: false
+      requests-per-minute: 30
   rag:
     enabled: ${SMARTTRIP_RAG_ENABLED:false}
     fallback-to-original: ${SMARTTRIP_RAG_FALLBACK:true}

@@ -288,6 +288,7 @@ public class AiProvider {
         throw new IOException("missing completion");
       requestId = safeIdentifier(response.getMetadata().getId());
       usage = response.getMetadata().getUsage();
+      if (usage instanceof org.springframework.ai.chat.metadata.EmptyUsage) usage = null;
       var result = response.getResult();
       finishReason = safeIdentifier(result.getMetadata().getFinishReason());
       String answer = result.getOutput().getText();
@@ -411,23 +412,39 @@ public class AiProvider {
     if (current != null && requested.equals(cachedSettings)) return current;
     synchronized (this) {
       if (chatClient == null || !requested.equals(cachedSettings)) {
+        chatClient = buildClient(true, Duration.ofSeconds(150));
+        cachedSettings = requested;
+      }
+      return chatClient;
+    }
+  }
+
+  /** Separate, bounded tool-calling client: same single-attempt transport, no forced JSON format. */
+  public ChatClient toolCallingClient(Duration timeout) {
+    requireConfigured();
+    if (timeout == null || timeout.isZero() || timeout.isNegative()) throw new BusinessException(504, "Agent执行超时");
+    return buildClient(false, timeout);
+  }
+
+  private ChatClient buildClient(boolean strictJson, Duration timeout) {
         String baseUrl = config.getBaseUrl().replaceAll("/+$", "");
         // The official SDK appends only /chat/completions; preserve compatible-mode/v1.
         if (baseUrl.endsWith("/chat/completions"))
           baseUrl = baseUrl.substring(0, baseUrl.length() - "/chat/completions".length());
         var options = OpenAiChatOptions.builder()
             .baseUrl(baseUrl).apiKey(config.getApiKey()).model(config.getModel())
-            .maxTokens(config.getMaxOutputTokens()).maxRetries(0)
-            .timeout(Duration.ofSeconds(150))
-            .responseFormat(OpenAiChatModel.ResponseFormat.builder()
-                .type(OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT).build())
-            .extraBody(Map.of("enable_thinking", false)).build();
-        chatClient = ChatClient.create(OpenAiChatModel.builder().options(options)
+            .maxTokens(strictJson ? config.getMaxOutputTokens() : Math.min(2048, config.getMaxOutputTokens())).maxRetries(0)
+            .timeout(timeout)
+            .extraBody(Map.of("enable_thinking", false));
+        if (strictJson) options.responseFormat(OpenAiChatModel.ResponseFormat.builder()
+            .type(OpenAiChatModel.ResponseFormat.Type.JSON_OBJECT).build());
+        OkHttpClient transport = strictJson ? client : client.newBuilder().callTimeout(timeout).readTimeout(timeout).build();
+        return ChatClient.create(OpenAiChatModel.builder().options(options.build())
             .httpClientBuilderCustomizer(builder -> {
               // Spring AI's default HTTP client reconnects automatically. Bridge its serialized
               // request through the existing single-attempt transport instead.
               builder.interceptor(chain -> {
-                Response response = client.newCall(chain.request()).execute();
+                Response response = transport.newCall(chain.request()).execute();
                 try {
                   JsonNode body = null;
                   try { body = json.readTree(response.peekBody(2000000).string()); }
@@ -446,11 +463,9 @@ public class AiProvider {
                 }
               });
             }).build());
-        cachedSettings = requested;
-      }
-      return chatClient;
-    }
   }
+
+  public String modelName() { return safeIdentifier(config.getModel()); }
 
   private static String safeIdentifier(String value) {
     return value != null && value.matches("[A-Za-z0-9_.:-]{1,128}") ? value : "unknown";

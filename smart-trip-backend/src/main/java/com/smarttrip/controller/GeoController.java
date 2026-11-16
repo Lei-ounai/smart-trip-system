@@ -13,10 +13,15 @@ public class GeoController {
   private final GeoService geo;
   private final AiProvider ai;
 
+  private com.smarttrip.agent.TravelAgentService agent;
+  @org.springframework.beans.factory.annotation.Autowired
+  public void configureAgent(com.smarttrip.agent.TravelAgentService service){this.agent=service;}
+
   @GetMapping("/api/capabilities")
   public Result<?> capabilities() {
     var capabilities = new java.util.LinkedHashMap<String, Object>();
     capabilities.put("ai", ai.available());
+    if(agent!=null)capabilities.put("agent",agent.readiness());
     capabilities.put("geo", geo.available());
     capabilities.put("map", geo.mapAvailable());
     capabilities.put("poi", geo.poiAvailable());

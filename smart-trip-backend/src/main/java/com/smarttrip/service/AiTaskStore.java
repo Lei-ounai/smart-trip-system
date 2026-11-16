@@ -16,6 +16,9 @@ public class AiTaskStore {
   private final TravelRequirementService requirements;
   private final AiDraftNormalizer normalizer;
   private final AiProvider provider;
+  private com.smarttrip.config.TravelAgentProperties agentPricing = new com.smarttrip.config.TravelAgentProperties();
+  @org.springframework.beans.factory.annotation.Autowired(required=false)
+  public void configureAgentPricing(com.smarttrip.config.TravelAgentProperties config){this.agentPricing=config;}
 
   public AiTaskStore(
       JdbcTemplate db,
@@ -64,6 +67,7 @@ public class AiTaskStore {
         t.put("startedAt", generation.get("startedAt"));
         generation.remove("_modelDiagnostics");
         generation.remove("_ragContext");
+        generation.remove("_agentContext");
         t.put(field, generation);
       } else t.put(field, trips.parseObject(meta.toString()));
     }
@@ -80,6 +84,13 @@ public class AiTaskStore {
     var t = db.queryForMap("SELECT * FROM ai_task WHERE id=? FOR UPDATE", id);
     if (!"QUEUED".equals(t.get("status"))) return false;
     long user = ((Number) t.get("user_id")).longValue();
+    // Redis leases may expire or be lost. Serialize admission on the existing user row
+    // before reserving quota, so a second worker cannot run alongside a persisted RUNNING task.
+    db.queryForList("SELECT id FROM sys_user WHERE id=? FOR UPDATE", user);
+    if (!db.queryForList("SELECT id FROM ai_task WHERE user_id=? AND status='RUNNING' AND id<>? LIMIT 1", user, id).isEmpty()) {
+      db.update("UPDATE ai_task SET status='FAILED',error_message='已有AI任务运行中，请等待完成后重试' WHERE id=?", id);
+      return false;
+    }
     db.update(
         "UPDATE sys_user SET ai_quota_used=0,quota_reset_date=CURRENT_DATE WHERE id=? AND"
             + " (quota_reset_date IS NULL OR quota_reset_date<CURRENT_DATE)",
@@ -100,7 +111,7 @@ public class AiTaskStore {
       var meta = generationMetadata(t.get("proposal_meta_json"));
       String now = java.time.Instant.now().toString();
       meta.putIfAbsent("startedAt", now);
-      appendPhase(meta, retrievingKnowledge ? "RETRIEVING" : "MODEL", now);
+      appendPhase(meta, retrievingKnowledge ? "RETRIEVING" : Boolean.TRUE.equals(meta.get("agentEnabled")) ? "AGENT_ANALYZING" : "MODEL", now);
       db.update("UPDATE ai_task SET proposal_meta_json=? WHERE id=?", trips.encode(meta), id);
     }
     return true;
@@ -552,7 +563,8 @@ public class AiTaskStore {
 
   @Transactional
   public void setPhase(String id, String phase) {
-    if (!Set.of("RETRIEVING", "MODEL", "MODEL_COMPLETED", "NORMALIZING", "VALIDATING").contains(phase))
+    if (!Set.of("RETRIEVING", "MODEL", "MODEL_COMPLETED", "NORMALIZING", "VALIDATING", "AGENT_ANALYZING", "AGENT_TOOL_CALLING",
+        "AGENT_TOOL_COMPLETED", "AGENT_EVALUATING", "AGENT_COMPLETED").contains(phase))
       throw new IllegalArgumentException("Invalid generation phase");
     var task = lockedTask(id);
     if (!"GENERATE".equals(task.get("task_type")) || !"RUNNING".equals(task.get("status"))) return;
@@ -573,6 +585,93 @@ public class AiTaskStore {
     if (history.size() > 24) history = new ArrayList<>(history.subList(history.size() - 24, history.size()));
     meta.put("phaseHistory", history);
     meta.put("phase", phase);
+  }
+
+
+  @Transactional
+  public TravelRequirement readGenerationRequirement(String id) {
+    var task=lockedTask(id);
+    if(!"GENERATE".equals(task.get("task_type")))throw new BusinessException(409,"仅生成任务具有旅行知识快照");
+    return requirement(generationMetadata(task.get("proposal_meta_json")));
+  }
+
+  @Transactional
+  public void recordAgentTrace(String id, com.smarttrip.agent.TravelAgentToolTrace trace) {
+    var task=lockedTask(id);if(!"RUNNING".equals(task.get("status")))return;
+    var meta=generationMetadata(task.get("proposal_meta_json"));
+    var agent=new LinkedHashMap<String,Object>();if(meta.get("agent") instanceof Map<?,?> old)old.forEach((k,v)->agent.put(String.valueOf(k),v));
+    var traces=new ArrayList<Object>();if(agent.get("traces") instanceof List<?> old)traces.addAll(old);
+    int existing=-1;for(int i=0;i<traces.size();i++){Object value=traces.get(i);if(value instanceof Map<?,?> entry&&entry.get("sequence") instanceof Number n&&n.intValue()==trace.sequence()){existing=i;break;}}
+    if(existing<0){if(traces.size()>=12)throw new BusinessException(422,"Agent工具记录超过安全上限");traces.add(trace);}else traces.set(existing,trace);
+    agent.put("traces",traces);agent.put("status","RUNNING");meta.put("agent",agent);
+    saveGenerationMeta(id,meta);
+  }
+
+  @Transactional
+  public void recordAgentResult(String id, Map<String,Object> result, String context) {
+    var task=lockedTask(id);if(!"RUNNING".equals(task.get("status")))return;
+    if(context==null||context.length()>40000)throw new BusinessException(422,"Agent参考数据超出安全限制");
+    var meta=generationMetadata(task.get("proposal_meta_json"));var safe=new LinkedHashMap<String,Object>();
+    for(String key:List.of("status","summary","evaluation","traces","modelCalls","sources","toolSources"))if(result.containsKey(key))safe.put(key,result.get(key));
+    meta.put("agent",safe);meta.put("_agentContext",context);saveGenerationMeta(id,meta);
+  }
+
+  @Transactional
+  public int beginModelCall(String id, String operation, int maximum) {
+    var task=lockedTask(id);
+    if(!"GENERATE".equals(task.get("task_type"))||!"RUNNING".equals(task.get("status")))throw new BusinessException(409,"任务不可调用模型");
+    if(!Set.of("AGENT","JSON_GENERATION").contains(operation)||maximum<1||maximum>9)throw new IllegalArgumentException("Invalid model limit");
+    var meta=generationMetadata(task.get("proposal_meta_json"));var calls=new ArrayList<Object>();
+    if(meta.get("modelCalls") instanceof List<?> old)calls.addAll(old);
+    if(calls.size()>=maximum)throw new BusinessException(422,"该任务模型调用次数已用完，未发起额外请求");
+    int sequence=calls.size()+1;calls.add(Map.of("sequence",sequence,"operation",operation,"model",provider.modelName(),"status","STARTED","startedAt",java.time.Instant.now().toString()));
+    meta.put("modelCalls",calls);
+    var pending=new LinkedHashMap<String,Object>();if(meta.get("modelUsage") instanceof Map<?,?> old)old.forEach((k,v)->pending.put(String.valueOf(k),v));
+    pending.put("attempts",sequence);pending.put("tokensComplete",false);pending.put("totalTokens",null);pending.put("estimatedCost",null);pending.put("costStatus","IN_PROGRESS");meta.put("modelUsage",pending);
+    saveGenerationMeta(id,meta);return sequence;
+  }
+
+  @Transactional
+  public void finishModelCall(String id, int sequence, Map<String,Object> usage) {
+    var task=lockedTask(id);var meta=generationMetadata(task.get("proposal_meta_json"));
+    if(!(meta.get("modelCalls") instanceof List<?> old)||sequence<1||sequence>old.size())throw new BusinessException(409,"模型调用记录不存在");
+    var calls=new ArrayList<Object>(old);var call=new LinkedHashMap<String,Object>((Map<String,Object>)calls.get(sequence-1));
+    if(!"STARTED".equals(call.get("status")))return;
+    for(String key:List.of("durationMs","inputTokens","outputTokens","totalTokens","status")){
+      Object value=usage.get(key);
+      if(key.equals("status")){call.put(key,"SUCCEEDED".equals(value)?"SUCCEEDED":"FAILED");}
+      else if(value instanceof Number n&&n.longValue()>=0)call.put(key,n.longValue());
+    }
+    call.put("completedAt",java.time.Instant.now().toString());call.putIfAbsent("status","FAILED");
+    String pricing=agentPricing.pricingStatus(String.valueOf(call.get("model")));call.put("costStatus",pricing);call.put("estimatedCost",null);
+    if("ESTIMATED_TOKEN_RATES".equals(pricing)&&call.get("inputTokens") instanceof Number in&&call.get("outputTokens") instanceof Number out){
+      var cost=new java.math.BigDecimal(in.toString()).multiply(agentPricing.getInputPricePerMillion())
+          .add(new java.math.BigDecimal(out.toString()).multiply(agentPricing.getOutputPricePerMillion()))
+          .divide(new java.math.BigDecimal("1000000"),8,java.math.RoundingMode.HALF_UP);
+      call.put("estimatedCost",cost);call.put("costCurrency",agentPricing.getPriceCurrency());
+    }else if("ESTIMATED_TOKEN_RATES".equals(pricing))call.put("costStatus","UNKNOWN_PROVIDER_USAGE");
+    calls.set(sequence-1,call);meta.put("modelCalls",calls);
+    long input=0,output=0,duration=0;boolean complete=true;
+    for(Object value:calls){var entry=(Map<?,?>)value;
+      if(entry.get("inputTokens") instanceof Number n)input+=n.longValue();else complete=false;
+      if(entry.get("outputTokens") instanceof Number n)output+=n.longValue();else complete=false;
+      if(entry.get("durationMs") instanceof Number n)duration+=n.longValue();
+    }
+    var total=new LinkedHashMap<String,Object>();total.put("attempts",calls.size());total.put("knownInputTokens",input);total.put("knownOutputTokens",output);total.put("tokensComplete",complete);
+    total.put("totalTokens",complete?input+output:null);total.put("durationMs",duration);total.put("estimatedCost",null);total.put("costStatus","UNKNOWN_NO_CONFIGURED_PRICING");
+    var knownCost=java.math.BigDecimal.ZERO;boolean allPriced=true;String currency=null;String costStatus="UNKNOWN_NO_CONFIGURED_PRICING";
+    for(Object value:calls){var entry=(Map<?,?>)value;
+      if(entry.get("estimatedCost") instanceof Number amount){knownCost=knownCost.add(new java.math.BigDecimal(amount.toString()));currency=String.valueOf(entry.get("costCurrency"));}
+      else {allPriced=false;costStatus=Objects.toString(entry.get("costStatus"),"UNKNOWN_PROVIDER_USAGE");}
+    }
+    total.put("knownEstimatedCost",knownCost);total.put("estimatedCost",allPriced?knownCost:null);total.put("costCurrency",currency);
+    total.put("costStatus",allPriced?"ESTIMATED_TOKEN_RATES":costStatus);
+    total.put("costNotice","按显式配置的模型费率估算，不含缓存折扣、税费或供应商账单校正");
+    meta.put("modelUsage",total);saveGenerationMeta(id,meta);
+  }
+
+  private void saveGenerationMeta(String id, Map<String,Object> meta) {
+    if(db.update("UPDATE ai_task SET proposal_meta_json=? WHERE id=? AND user_id=?",trips.encode(meta),id,access.userId())!=1)throw new BusinessException(409,"任务状态已变化");
   }
 
   private boolean canRecover(Map<String, Object> meta) {

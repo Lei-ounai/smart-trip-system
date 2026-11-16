@@ -113,8 +113,34 @@ class AiRagHttpClosureIntegrationTests {
     }
   }
   static class FixedProvider extends AiProvider {
-    final JdbcTemplate db;final ReadOnlyKnowledge knowledge;
+    final JdbcTemplate db;final ReadOnlyKnowledge knowledge;final Map<String,AtomicInteger> agentRounds=new ConcurrentHashMap<>();
     FixedProvider(JdbcTemplate db,ReadOnlyKnowledge knowledge){super(new AiProperties());this.db=db;this.knowledge=knowledge;}
+    @Override public org.springframework.ai.chat.client.ChatClient toolCallingClient(Duration timeout){
+      var attempts=agentRounds.computeIfAbsent(MDC.get("taskId"),key->new AtomicInteger());
+      return org.springframework.ai.chat.client.ChatClient.create(new org.springframework.ai.chat.model.ChatModel(){
+        public org.springframework.ai.chat.model.ChatResponse call(org.springframework.ai.chat.prompt.Prompt prompt){
+          String id=MDC.get("taskId");var retrieved=RETRIEVED.get(id);if(retrieved==null)throw new IllegalStateException("Missing actual RAG before Agent");
+          try{var stored=JSON.readTree(db.queryForObject("SELECT proposal_meta_json FROM ai_task WHERE id=?",String.class,id));
+            if(!retrieved.promptContext().equals(stored.path("_ragContext").asText()))throw new IllegalStateException("RAG snapshot not saved before Agent");
+          }catch(java.io.IOException e){throw new IllegalStateException(e);}
+          int round=attempts.incrementAndGet();org.springframework.ai.chat.messages.AssistantMessage message;
+          if(round==1){
+            message=org.springframework.ai.chat.messages.AssistantMessage.builder().content("").toolCalls(List.of(
+                new org.springframework.ai.chat.messages.AssistantMessage.ToolCall("budget","function","calculateBudget","{\"travelers\":7,\"days\":8,\"currency\":\"CNY\",\"costScope\":\"TOTAL\",\"transport\":6000,\"accommodation\":8400,\"food\":5600,\"tickets\":2100,\"other\":700}"),
+                new org.springframework.ai.chat.messages.AssistantMessage.ToolCall("knowledge","function","getTravelKnowledge","{}"))).build();
+          }else{
+            if(round!=2||prompt.getInstructions().stream().noneMatch(m->m instanceof org.springframework.ai.chat.messages.ToolResponseMessage))throw new IllegalStateException("Missing real tool response");
+            var result=JSON.createObjectNode().put("summary","已核算用户估算并读取真实已存来源").put("days",8).put("travelers",7).put("budgetScope","PER_PERSON").put("currency","CNY");
+            result.putArray("destinations").add("稻城亚丁");result.putArray("mustVisit");result.putArray("avoid");result.putArray("weatherClaims");
+            var ids=result.putArray("sourceIds");for(var source:JSON.valueToTree(retrieved.snapshot()).path("sources"))ids.add(source.path("chunkId").asText());
+            message=new org.springframework.ai.chat.messages.AssistantMessage(result.toString());
+          }
+          return new org.springframework.ai.chat.model.ChatResponse(List.of(new org.springframework.ai.chat.model.Generation(message,
+              org.springframework.ai.chat.metadata.ChatGenerationMetadata.builder().finishReason(round==1?"TOOL_CALLS":"STOP").build())),
+              org.springframework.ai.chat.metadata.ChatResponseMetadata.builder().usage(new org.springframework.ai.chat.metadata.DefaultUsage(20,10)).build());
+        }
+      });
+    }
     @Override public boolean available(){return true;}
     @Override public TravelRequirement interpret(String description){INTERPRET_CALLS.incrementAndGet();throw new BusinessException(400,"This fixture does not call semantic interpretation");}
     @Override public String complete(String input){
@@ -123,12 +149,15 @@ class AiRagHttpClosureIntegrationTests {
       MODEL_CALLS.computeIfAbsent(id,key->new AtomicInteger()).incrementAndGet();
       var real=RETRIEVED.get(id);
       try {
-        if(real==null||real.promptContext().isBlank()||!input.endsWith("\n\n"+real.promptContext()))
+        if(real==null||real.promptContext().isBlank()||!input.contains("\n\n"+real.promptContext()))
           throw new IllegalStateException("Actual retrieval context missing from model input");
         var persisted=JSON.readTree(db.queryForObject("SELECT proposal_meta_json FROM ai_task WHERE id=?",String.class,id));
         if(!real.promptContext().equals(persisted.path("_ragContext").asText())
             ||!JSON.valueToTree(real.snapshot()).path("sources").equals(persisted.path("rag").path("sources")))
           throw new IllegalStateException("Actual context was not persisted before model invocation");
+        if(persisted.path("agentEnabled").asBoolean()){
+          if(persisted.path("_agentContext").asText().isBlank()||!input.endsWith("\n\n"+persisted.path("_agentContext").asText()))throw new IllegalStateException("Agent context not saved before final model");
+        }else if(!input.endsWith("\n\n"+real.promptContext()))throw new IllegalStateException("Original RAG final prompt changed");
         var payload=JSON.readTree(real.promptContext().substring(RagContextBuilder.RULES.length()+1));
         if(payload.path("sources").isEmpty())throw new IllegalStateException("No real selected knowledge");
         var ids=new ArrayList<String>();
@@ -163,6 +192,7 @@ class AiRagHttpClosureIntegrationTests {
   @Autowired ReadOnlyKnowledge knowledge;
   @Autowired ApplicationContext app;
   @Autowired AiProperties ai;
+  @Autowired TravelAgentProperties agentConfig;
   @Autowired PlatformTransactionManager transactionManager;
   final HttpClient http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
   final AtomicInteger accounts=new AtomicInteger();
@@ -286,6 +316,23 @@ class AiRagHttpClosureIntegrationTests {
     evidence("success-edit-concurrent-apply-workbench",id,Map.of("days",8,"activities",24,"estimatedTotalCny",28100,"oneFormalTrip",true,
       "ownershipDenied",true,"staleDraftAndTripVersionsRejected",true,"noRepeatedRetrievalOrModel",true,"quotaUsed",quota(owner)));
   }
+  @Test void agentEnabledRealRagToolsAndFixedJsonUseTheSameFullHttpClosure()throws Exception{
+    Set<String> previous=new HashSet<>(CAPTURES.keySet());
+    agentConfig.setEnabled(true);agentConfig.setToolCallingVerified(true);agentConfig.setVerifiedModel(ai.getModel());agentConfig.setVerifiedBaseUrl(ai.getBaseUrl());
+    try{
+      realRetrievalAndFixedGenerationEditConcurrentSaveAndWorkbench();
+      String id=CAPTURES.keySet().stream().filter(key->!previous.contains(key)).findFirst().orElseThrow();
+      var stored=JSON.readTree(db.queryForObject("SELECT proposal_meta_json FROM ai_task WHERE id=?",String.class,id));
+      assertEquals("COMPLETED",stored.path("agent").path("status").asText());assertEquals(3,stored.path("modelCalls").size());
+      var tools=new HashSet<String>();for(var trace:stored.path("agent").path("traces")){assertEquals("SUCCEEDED",trace.path("status").asText());tools.add(trace.path("toolName").asText());}
+      assertEquals(Set.of("calculateBudget","getTravelKnowledge"),tools);
+      var phases=new ArrayList<String>();stored.path("phaseHistory").forEach(event->phases.add(event.path("phase").asText()));
+      assertTrue(phases.indexOf("RETRIEVING")<phases.indexOf("AGENT_ANALYZING"));
+      assertTrue(phases.indexOf("MODEL")>phases.indexOf("AGENT_COMPLETED"),"JSON generation phase cannot appear before Agent completes");
+      assertEquals("APPLIED",db.queryForObject("SELECT status FROM ai_task WHERE id=?",String.class,id));
+    }finally{agentConfig.setEnabled(false);agentConfig.setToolCallingVerified(false);}
+  }
+
   @Test void actualRetrievalThenProviderFailureRefundAndSameKeyRetry()throws Exception{
     var owner=account();var confirmed=confirm(owner,"RAG_HTTP_FAILURE");var request=submission(UUID.randomUUID().toString(),confirmed);
     String id=ok(call(owner,"POST","/api/ai/tasks",request)).path("id").asText();var failed=await(owner,id);

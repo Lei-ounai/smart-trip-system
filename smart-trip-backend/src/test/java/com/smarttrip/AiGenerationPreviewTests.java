@@ -45,7 +45,11 @@ class AiGenerationPreviewTests {
         "requirement", requirement(), "expiresAt", Instant.now().plusSeconds(86400).toString())));
     when(db.queryForMap(anyString(), any(Object[].class))).thenAnswer(i -> row);
     when(db.queryForList(anyString(), any(Object[].class))).thenAnswer(i -> {
-      if (i.getArgument(0, String.class).contains("AS userId")) {
+      String sql=i.getArgument(0, String.class);
+      if(sql.equals("SELECT id FROM sys_user WHERE id=? FOR UPDATE"))return List.of(Map.of("id",7L));
+      if(sql.contains("status='RUNNING' AND id<>?"))
+        return "RUNNING".equals(row.get("status")) && !Objects.equals("generation-task",i.getArgument(2)) ? List.of(row) : List.of();
+      if (sql.contains("AS userId")) {
         if (!Objects.equals(access.userId(), 7L)) return List.of();
         var view = new LinkedHashMap<String, Object>();
         view.put("id", "generation-task");

@@ -80,16 +80,22 @@ class AiWorkflowIntegrationTests {
         public String complete(String input) {
           modelInputs.add(input);
           modelContexts.add(org.slf4j.MDC.getCopyOfContextMap());
+          if (input.contains("WAIT_GENERATE_LOCK_FIXTURE")) {
+            entered.countDown();
+            try { if (!release.await(8, TimeUnit.SECONDS)) throw new IllegalStateException("fixture wait timed out"); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new IllegalStateException("fixture interrupted"); }
+          }
           if (input.startsWith("修改要求：")) return modificationResponse(input);
           if (input.contains("FAIL_FIXTURE")) throw new BusinessException(502, "本地测试模拟上游失败");
           if (input.contains("BAD_FIXTURE"))
             return "{\"title\":\"无效草稿\",\"destination\":\"成都\",\"days\":[]}";
-          return "{\"title\":\"本地测试草稿\",\"destination\":\"成都\",\"startDate\":\"2026-10-10\",\"days\":[{\"dayTheme\":\"慢慢走\",\"items\":[{\"itemName\":\"宽窄巷子\",\"itemType\":\"SCENIC\",\"costEstimate\":30}]}]}";
+          return "{\"title\":\"本地测试草稿\",\"destination\":\"成都\",\"startDate\":\"2026-10-10\",\"summary\":\"固定测试，费用与交通为参考估算\",\"days\":[{\"dayTheme\":\"慢慢走\",\"items\":[{\"itemName\":\"宽窄巷子\",\"itemType\":\"SCENIC\",\"costEstimate\":30,\"startTime\":\"09:00\",\"costTimeHours\":2}]}]}";
         }
       };
     }
   }
 
+  @Autowired org.springframework.data.redis.core.StringRedisTemplate redis;
   @Autowired AiTaskService tasks;
   @Autowired AiTaskStore store;
   @Autowired WorkbenchService trips;
@@ -130,10 +136,10 @@ class AiWorkflowIntegrationTests {
   @Test
   void generationIsAtomicAndRequestRetryIsIdempotent() throws Exception {
     String key = UUID.randomUUID().toString();
-    var t = tasks.submit(key, "GENERATE", null, "GENERATE_FIXTURE");
+    var t = generate(key, "GENERATE_FIXTURE");
     var done = await((String) t.get("id"));
     assertEquals("PREVIEW", done.get("status"));
-    assertEquals(done.get("id"), tasks.submit(key, "GENERATE", null, "GENERATE_FIXTURE").get("id"));
+    assertEquals(done.get("id"), generate(key, "GENERATE_FIXTURE").get("id"));
     assertNull(done.get("tripId"));
     assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM trip_plan WHERE user_id=?", Integer.class, user));
     Long trip = store.apply((String) done.get("id")).getId();
@@ -153,7 +159,7 @@ class AiWorkflowIntegrationTests {
   @Test
   void invalidOutputAndProviderFailureRefundQuotaWithoutPartialTrip() throws Exception {
     for (String prompt : List.of("BAD_FIXTURE", "FAIL_FIXTURE")) {
-      var t = tasks.submit(UUID.randomUUID().toString(), "GENERATE", null, prompt);
+      var t = generate(UUID.randomUUID().toString(), prompt);
       assertEquals("FAILED", await((String) t.get("id")).get("status"));
     }
     assertEquals(
@@ -165,7 +171,7 @@ class AiWorkflowIntegrationTests {
 
   @Test
   void modificationWaitsForConfirmationAndApplyRestoresHistory() throws Exception {
-    var first = tasks.submit(UUID.randomUUID().toString(), "GENERATE", null, "GENERATE_FIXTURE");
+    var first = generate(UUID.randomUUID().toString(), "GENERATE_FIXTURE");
     var done = await((String) first.get("id"));
     Long id = store.apply((String) done.get("id")).getId();
     var trip = trips.load(id);
@@ -186,7 +192,7 @@ class AiWorkflowIntegrationTests {
 
   @Test
   void staleProposalCannotOverwriteConcurrentEdit() throws Exception {
-    var first = tasks.submit(UUID.randomUUID().toString(), "GENERATE", null, "GENERATE_FIXTURE");
+    var first = generate(UUID.randomUUID().toString(), "GENERATE_FIXTURE");
     await((String) first.get("id"));
     Long id = store.apply((String) first.get("id")).getId();
     var proposal = tasks.submit(UUID.randomUUID().toString(), "MODIFY", id, "MODIFY_FIXTURE");
@@ -197,6 +203,39 @@ class AiWorkflowIntegrationTests {
     trips.save(id, t);
     assertEquals(409, assertThrows(BusinessException.class, () -> store.apply(task)).getCode());
     assertEquals("并发编辑", trips.load(id).getTitle());
+  }
+
+  TravelRequirement generationRequirement(String description) {
+    return new ObjectMapper().convertValue(Map.of(
+        "description", description, "destinations", List.of("成都"), "days", 1,
+        "startDate", "2026-10-10", "travelers", 2, "includesTravelDays", false,
+        "budgetMax", 500, "budgetScope", "TOTAL", "currency", "CNY"), TravelRequirement.class);
+  }
+
+  Map<String, Object> generate(String key, String description) {
+    return tasks.submitGeneration(key, generationRequirement(description), true);
+  }
+
+  @Test
+  void lostRedisLeaseCannotAdmitASecondActiveTaskOrDeleteAReplacementToken() throws Exception {
+    entered = new CountDownLatch(1); release = new CountDownLatch(1);
+    String lock = "smarttrip:ai:user:" + user;
+    var first = generate(UUID.randomUUID().toString(), "WAIT_GENERATE_LOCK_FIXTURE");
+    assertTrue(entered.await(5, TimeUnit.SECONDS));
+    Map<String, Object> second;
+    try {
+      // This Redis instance/database is explicitly isolated; remove only this fixture user's lease.
+      assertTrue(Boolean.TRUE.equals(redis.delete(lock)));
+      second = generate(UUID.randomUUID().toString(), "GENERATE_FIXTURE");
+      second = await((String) second.get("id"));
+      redis.opsForValue().set(lock, "replacement-owner", java.time.Duration.ofSeconds(30));
+    } finally { release.countDown(); }
+    assertEquals("PREVIEW", await((String) first.get("id")).get("status"));
+    assertEquals("FAILED", second.get("status"), "A lost Redis token must not admit another task while the first DB task is RUNNING");
+    assertEquals(1, modelInputs.size());
+    assertEquals(1, db.queryForObject("SELECT ai_quota_used FROM sys_user WHERE id=?", Integer.class, user));
+    assertEquals("replacement-owner", redis.opsForValue().get(lock), "Old worker may not delete a newer owner's token");
+    redis.delete(lock);
   }
 
   int source(Long id) {
@@ -224,8 +263,12 @@ class AiWorkflowIntegrationTests {
   void preferencesComeFromAuthenticatedProfileOnceAndRetryKeepsSnapshot() throws Exception {
     db.update("UPDATE sys_user SET travel_preferences=? WHERE id=?", "可信偏好_步行", user);
     String key = UUID.randomUUID().toString();
-    String prompt = "请规划{\"destination\":\"成都\",\"totalDays\":2}。旅行偏好：过期前端偏好";
-    String id = (String) tasks.submit(key, "GENERATE", null, prompt).get("id");
+    String prompt = "规划成都一天";
+    // The obsolete raw GENERATE route must remain rejected rather than bypass confirmation.
+    assertEquals(400, assertThrows(BusinessException.class,
+        () -> tasks.submit(UUID.randomUUID().toString(), "GENERATE", null,
+            "请规划{\"destination\":\"成都\"}。旅行偏好：过期前端偏好")).getCode());
+    String id = (String) generate(key, prompt).get("id");
     assertEquals("PREVIEW", await(id).get("status"));
     String sent = input(id);
     assertEquals(sent, modelInputs.get(0));
@@ -233,7 +276,7 @@ class AiWorkflowIntegrationTests {
     assertEquals(1, sent.split("可信偏好_步行", -1).length - 1);
     assertEquals(1, sent.split("USER_TRAVEL_PREFERENCES_JSON", -1).length - 1);
     db.update("UPDATE sys_user SET travel_preferences=? WHERE id=?", "新的偏好", user);
-    assertEquals(id, tasks.submit(key, "GENERATE", null, prompt).get("id"));
+    assertEquals(id, generate(key, prompt).get("id"));
     assertEquals(sent, input(id));
     assertEquals(1, modelInputs.size());
   }
@@ -243,9 +286,13 @@ class AiWorkflowIntegrationTests {
     String prompt =
         "请规划{\"destination\":\"成都\",\"totalDays\":2,\"requirements\":\"请保留文字。旅行偏好：慢游\"}";
     String id =
-        (String) tasks.submit(UUID.randomUUID().toString(), "GENERATE", null, prompt).get("id");
+        (String) generate(UUID.randomUUID().toString(), prompt).get("id");
     assertEquals("PREVIEW", await(id).get("status"));
-    assertTrue(input(id).startsWith(prompt + "\nUSER_TRAVEL_PREFERENCES_JSON"));
+    var storedRequirement = new ObjectMapper().readTree(
+        db.queryForObject("SELECT proposal_meta_json FROM ai_task WHERE id=?", String.class, id));
+    assertEquals(prompt, storedRequirement.path("requirement").path("description").asText());
+    assertTrue(input(id).contains("旅行偏好：慢游"));
+    assertTrue(input(id).contains("USER_TRAVEL_PREFERENCES_JSON"));
   }
 
   @Test
@@ -254,7 +301,7 @@ class AiWorkflowIntegrationTests {
     String id =
         (String)
             tasks
-                .submit(UUID.randomUUID().toString(), "GENERATE", null, "GENERATE_FIXTURE")
+                .submitGeneration(UUID.randomUUID().toString(), generationRequirement("GENERATE_FIXTURE"), true)
                 .get("id");
     assertEquals("PREVIEW", await(id).get("status"));
     assertTrue(input(id).endsWith("：\"\""));
@@ -371,7 +418,7 @@ class AiWorkflowIntegrationTests {
     String id =
         (String)
             tasks
-                .submit(UUID.randomUUID().toString(), "GENERATE", null, "GENERATE_FIXTURE")
+                .submitGeneration(UUID.randomUUID().toString(), generationRequirement("GENERATE_FIXTURE"), true)
                 .get("id");
     assertEquals("PREVIEW", await(id).get("status"));
     assertEquals("ai_submission_trace_2026", modelContexts.get(0).get("traceId"));

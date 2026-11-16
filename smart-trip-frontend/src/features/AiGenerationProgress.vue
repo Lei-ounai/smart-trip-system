@@ -4,6 +4,7 @@ import type { Task } from "./types";
 import { userText } from "./trip-draft-presentation";
 import HomeIcon from "./HomeIcon.vue";
 import RagSources from "./RagSources.vue";
+import AgentExecution from "./AgentExecution.vue";
 import "./ai-generation-progress.css";
 
 const props = withDefaults(
@@ -55,6 +56,15 @@ const stages = computed(() => {
       label: "检索旅行参考资料",
       detail: "查询适用的旅行知识与来源",
     });
+  if (props.task?.generation?.agentEnabled || props.task?.generation?.phaseHistory?.some(e => e.phase.startsWith("AGENT_"))) {
+    const at = value.findIndex(e => e.phase === "MODEL");
+    value.splice(at, 0,
+      { phase: "AGENT_ANALYZING", label: "理解查询需要", detail: "根据确认条件选择只读工具" },
+      { phase: "AGENT_TOOL_CALLING", label: "查询与计算", detail: "执行实际工具查询或预算计算" },
+      { phase: "AGENT_TOOL_COMPLETED", label: "收到工具结果", detail: "保留来源与不可用原因" },
+      { phase: "AGENT_EVALUATING", label: "核对参考信息", detail: "检查条件一致性和数据边界" },
+      { phase: "AGENT_COMPLETED", label: "资料整理完成", detail: "交给原有路书生成流程" });
+  }
   return value;
 });
 const now = ref(Date.now());
@@ -127,6 +137,7 @@ const title = computed(() => {
   if (!props.task) return "从一个想法，向旅程出发";
   if (currentPhase.value === "QUEUED") return "旅行想法，已在等待出发";
   if (currentPhase.value === "RETRIEVING") return "正在检索这段旅程的参考资料";
+  if (currentPhase.value.startsWith("AGENT_")) return "正在查询并核对旅途信息";
   if (currentPhase.value === "MODEL") return "正在为你构思这段旅程";
   if (currentPhase.value === "MODEL_COMPLETED") return "旅程已有轮廓";
   if (currentPhase.value === "NORMALIZING") return "把旅程，整理成每一天";
@@ -294,6 +305,7 @@ onBeforeUnmount(() => {
       </li>
     </ol>
     <RagSources :task="task" />
+    <AgentExecution :task="task" />
     <footer class="agp-footer">
       <p>查询与重连只读取原任务，不会再次生成或重复扣费。</p>
       <button
